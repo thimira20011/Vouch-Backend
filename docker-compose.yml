@@ -1,0 +1,43 @@
+version: '3.8'
+
+services:
+  postgres:
+    image: postgres:17-alpine
+    container_name: vouch-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: vouch_db
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgrespassword
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d vouch_db"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: vouch-api
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      - ASPNETCORE_ENVIRONMENT=Development
+      - ConnectionStrings__DefaultConnection=Host=postgres;Port=5432;Database=vouch_db;Username=postgres;Password=postgrespassword
+      - Jwt__Key=VouchMonasticMinimalismSuperSecretSigningKey2026MustBeLongEnough!
+      - Jwt__Issuer=VouchBackend
+      - Jwt__Audience=VouchFrontend
+      - Security__EncryptionKey=VouchPiiAes256EncryptionKeyForUniversitySecurity2026!
+      - Anthropic__ApiKey=${ANTHROPIC_API_KEY}
+    ports:
+      - "5000:8080"
+
+volumes:
+  postgres_data:
