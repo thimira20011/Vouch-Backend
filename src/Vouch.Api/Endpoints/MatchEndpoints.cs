@@ -3,8 +3,6 @@ using Vouch.Application.Features.Matching;
 
 namespace Vouch.Api.Endpoints;
 
-public record RespondMatchRequest(bool Accept);
-
 public static class MatchEndpoints
 {
     public static IEndpointRouteBuilder MapMatchEndpoints(this IEndpointRouteBuilder app)

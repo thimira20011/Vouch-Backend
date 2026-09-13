@@ -36,6 +36,8 @@ public record ArchitectDashboardDto(
     IReadOnlyList<string> TrustScoreAnomalies
 );
 
+public record ResolveReportBody(bool Uphold, string? Notes);
+
 public interface IModerationService
 {
     Task<ReportDto> SubmitReportAsync(Guid reporterId, CreateReportRequest request, CancellationToken ct = default);

@@ -2,6 +2,8 @@ using Vouch.Domain.Enums;
 
 namespace Vouch.Application.Features.Matching;
 
+public record RespondMatchRequest(bool Accept);
+
 public record DailyMatchDto(
     Guid MatchId,
     Guid MatchedUserId,

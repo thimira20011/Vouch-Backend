@@ -3,8 +3,6 @@ using Vouch.Application.Features.Moderation;
 
 namespace Vouch.Api.Endpoints;
 
-public record ResolveReportBody(bool Uphold, string? Notes);
-
 public static class ModerationEndpoints
 {
     public static IEndpointRouteBuilder MapModerationEndpoints(this IEndpointRouteBuilder app)
