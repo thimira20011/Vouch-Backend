@@ -85,6 +85,24 @@ public class TrustService : ITrustService
             target.IncubationCompletedAt = now;
         }
 
+        // REQ-A6: Persist campus launch readiness here (on vouch submission) — not on the GET dashboard read
+        var campus = await _context.Campuses.FirstOrDefaultAsync(c => c.Id == target.CampusId, ct);
+        if (campus is not null)
+        {
+            var ambassadors = await _context.Users
+                .Include(u => u.VouchesGiven)
+                .Where(u => u.CampusId == campus.Id && u.Role == UserRole.Ambassador && u.Status == AccountStatus.Active)
+                .ToListAsync(ct);
+
+            var activeAmbassadorCount = ambassadors.Count;
+            var ambassadorsMeetingVouchTarget = ambassadors.Count(a => a.VouchesGiven.Count >= campus.RequiredVouchesPerAmbassador);
+            var readiness = Vouch.Domain.Services.LaunchReadinessCalculator.CalculateReadiness(
+                activeAmbassadorCount, ambassadorsMeetingVouchTarget, campus.RequiredAmbassadorsForLaunch);
+
+            campus.LaunchReadinessScore = readiness.LaunchReadinessPercentage;
+            campus.IsSoftLaunchUnlocked = readiness.IsGatePassed;
+        }
+
         await _context.SaveChangesAsync(ct);
 
         // REQ-10: Anomaly check: alert if score increases by > 3 points in 48 hours
@@ -140,7 +158,7 @@ public class TrustService : ITrustService
         );
     }
 
-    public async Task<int> CalculateMutualVouchersAsync(Guid userAId, Guid userBId, CancellationToken ct = default)
+    private async Task<int> CalculateMutualVouchersAsync(Guid userAId, Guid userBId, CancellationToken ct = default)
     {
         // Mutual vouchers = users who have vouched for BOTH user A and user B
         var vouchersForA = await _context.Vouches

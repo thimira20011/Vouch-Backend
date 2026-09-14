@@ -154,9 +154,9 @@ public class ModerationService : IModerationService
             campus.RequiredAmbassadorsForLaunch
         );
 
-        campus.LaunchReadinessScore = readiness.LaunchReadinessPercentage;
-        campus.IsSoftLaunchUnlocked = readiness.IsGatePassed;
-        await _context.SaveChangesAsync(ct);
+        // Note: campus launch readiness is calculated live here and returned to the Architect.
+        // Persisting it is done only when a vouch is submitted (a state-changing event),
+        // not on every read — a GET method should never write to the database.
 
         var totalActive = await _context.Users.CountAsync(u => u.CampusId == campusId && u.Status == AccountStatus.Active, ct);
         var totalIncubation = await _context.Users.CountAsync(u => u.CampusId == campusId && u.Status == AccountStatus.InIncubation, ct);
