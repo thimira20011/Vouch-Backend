@@ -49,8 +49,7 @@ public static class MessagingEndpoints
 
             try
             {
-                var request = body with { ConversationId = id };
-                var message = await messagingService.SendMessageAsync(userId, request, ct);
+                var message = await messagingService.SendMessageAsync(userId, id, body, ct);
                 return Results.Created($"/api/conversations/{id}/messages/{message.Id}", message);
             }
             catch (UnauthorizedAccessException)

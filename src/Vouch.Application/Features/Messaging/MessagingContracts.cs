@@ -2,10 +2,7 @@ using Vouch.Domain.Enums;
 
 namespace Vouch.Application.Features.Messaging;
 
-public record SendMessageRequest(
-    Guid ConversationId,
-    string Body
-);
+public record SendMessageRequest(string Body);
 
 public record MessageDto(
     Guid Id,
@@ -31,7 +28,7 @@ public record ConversationDto(
 
 public interface IMessagingService
 {
-    Task<MessageDto> SendMessageAsync(Guid senderId, SendMessageRequest request, CancellationToken ct = default);
+    Task<MessageDto> SendMessageAsync(Guid senderId, Guid conversationId, SendMessageRequest request, CancellationToken ct = default);
     Task<IReadOnlyList<ConversationDto>> GetUserConversationsAsync(Guid userId, CancellationToken ct = default);
     Task<IReadOnlyList<MessageDto>> GetConversationMessagesAsync(Guid userId, Guid conversationId, CancellationToken ct = default);
     Task<bool> PauseConversationAsync(Guid userId, Guid conversationId, CancellationToken ct = default);

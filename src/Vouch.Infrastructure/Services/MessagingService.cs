@@ -18,12 +18,12 @@ public class MessagingService : IMessagingService
         _notificationService = notificationService;
     }
 
-    public async Task<MessageDto> SendMessageAsync(Guid senderId, SendMessageRequest request, CancellationToken ct = default)
+    public async Task<MessageDto> SendMessageAsync(Guid senderId, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
     {
         var conversation = await _context.Conversations
             .Include(c => c.UserA)
             .Include(c => c.UserB)
-            .FirstOrDefaultAsync(c => c.Id == request.ConversationId, ct)
+            .FirstOrDefaultAsync(c => c.Id == conversationId, ct)
             ?? throw new KeyNotFoundException("Conversation not found.");
 
         if (conversation.UserAId != senderId && conversation.UserBId != senderId)
