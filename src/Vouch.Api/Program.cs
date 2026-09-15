@@ -10,13 +10,24 @@ using Vouch.Infrastructure.SignalR;
 
 var builder = WebApplication.CreateBuilder(args);
 
+// Load local dev overrides (gitignored — contains real dev secrets)
+builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+
 // 1. Add Infrastructure Services (EF Core PostgreSQL, SignalR, Security, Domain Services)
 builder.Services.AddInfrastructure(builder.Configuration);
 
 // 2. Configure JWT Authentication & Authorization
-var jwtSecret = builder.Configuration["Jwt:Key"] ?? "VouchSuperSecretJwtSigningKeyMustBeVeryLongAndSecure2026!";
-var jwtIssuer = builder.Configuration["Jwt:Issuer"] ?? "VouchServer";
-var jwtAudience = builder.Configuration["Jwt:Audience"] ?? "VouchClient";
+// SECURITY: These values MUST be set via environment variables or secrets manager.
+// The app will refuse to start if any are missing — never use fallback defaults for secrets.
+var jwtSecret = builder.Configuration["Jwt:Key"]
+    ?? throw new InvalidOperationException("Jwt:Key is not configured. Set it via environment variable or user secrets.");
+var jwtIssuer = builder.Configuration["Jwt:Issuer"]
+    ?? throw new InvalidOperationException("Jwt:Issuer is not configured.");
+var jwtAudience = builder.Configuration["Jwt:Audience"]
+    ?? throw new InvalidOperationException("Jwt:Audience is not configured.");
+
+if (jwtSecret.Length < 32)
+    throw new InvalidOperationException("Jwt:Key must be at least 32 characters long for HMAC-SHA256.");
 
 builder.Services.AddAuthentication(options =>
 {
