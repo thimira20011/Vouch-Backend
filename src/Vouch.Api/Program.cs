@@ -1,5 +1,6 @@
 using System.Text;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Vouch.Api.Endpoints;
 using Vouch.Application.Common.Interfaces;
@@ -70,6 +71,37 @@ builder.Services.AddCors(options =>
 
 builder.Services.AddOpenApi();
 
+// 4. Rate Limiting — brute-force protection on auth endpoints (Step 7)
+builder.Services.AddRateLimiter(options =>
+{
+    // Strict: register + login — 5 attempts per minute, queue up to 2
+    options.AddFixedWindowLimiter("auth_strict", o =>
+    {
+        o.PermitLimit = 5;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
+        o.QueueLimit = 2;
+    });
+
+    // Standard: onboarding + delete-account — 20 per minute
+    options.AddFixedWindowLimiter("auth_standard", o =>
+    {
+        o.PermitLimit = 20;
+        o.Window = TimeSpan.FromMinutes(1);
+        o.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
+        o.QueueLimit = 5;
+    });
+
+    // Return 429 Too Many Requests with a Retry-After header
+    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
+    options.OnRejected = async (context, ct) =>
+    {
+        context.HttpContext.Response.Headers.RetryAfter = "60";
+        await context.HttpContext.Response.WriteAsync(
+            "{\"error\":\"Too many requests. Please wait before trying again.\"}", ct);
+    };
+});
+
 var app = builder.Build();
 
 // 4. Seed Database
@@ -95,6 +127,7 @@ if (app.Environment.IsDevelopment())
 
 app.UseHttpsRedirection();
 app.UseCors("VouchCorsPolicy");
+app.UseRateLimiter(); // Must come before Authentication
 app.UseAuthentication();
 app.UseAuthorization();
 

@@ -26,7 +26,8 @@ public static class AuthEndpoints
             }
         })
         .WithName("Register")
-        .WithSummary("Register with .ac.lk university email");
+        .WithSummary("Register with .ac.lk university email")
+        .RequireRateLimiting("auth_strict");
 
         group.MapPost("/login", async (LoginRequest request, IAuthService authService, CancellationToken ct) =>
         {
@@ -45,7 +46,8 @@ public static class AuthEndpoints
             }
         })
         .WithName("Login")
-        .WithSummary("Login to account");
+        .WithSummary("Login to account")
+        .RequireRateLimiting("auth_strict");
 
         group.MapPost("/onboarding", async (CompleteOnboardingRequest request, ClaimsPrincipal principal, IAuthService authService, CancellationToken ct) =>
         {
@@ -64,7 +66,8 @@ public static class AuthEndpoints
         })
         .RequireAuthorization()
         .WithName("CompleteOnboarding")
-        .WithSummary("Submit Deep Values, Intellectual Interests, and Bio");
+        .WithSummary("Submit Deep Values, Intellectual Interests, and Bio")
+        .RequireRateLimiting("auth_standard");
 
         group.MapPost("/delete-account", async (ClaimsPrincipal principal, IAuthService authService, CancellationToken ct) =>
         {
@@ -76,7 +79,8 @@ public static class AuthEndpoints
         })
         .RequireAuthorization()
         .WithName("RequestAccountDeletion")
-        .WithSummary("Request permanent account deletion (NFR-6)");
+        .WithSummary("Request permanent account deletion (NFR-6)")
+        .RequireRateLimiting("auth_standard");
 
         return app;
     }
