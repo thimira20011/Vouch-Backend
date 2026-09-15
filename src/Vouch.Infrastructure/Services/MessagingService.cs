@@ -95,6 +95,7 @@ public class MessagingService : IMessagingService
     public async Task<IReadOnlyList<ConversationDto>> GetUserConversationsAsync(Guid userId, CancellationToken ct = default)
     {
         var conversations = await _context.Conversations
+            .AsNoTracking()
             .Include(c => c.UserA)
             .Include(c => c.UserB)
             .Where(c => c.UserAId == userId || c.UserBId == userId)
@@ -127,6 +128,7 @@ public class MessagingService : IMessagingService
     public async Task<IReadOnlyList<MessageDto>> GetConversationMessagesAsync(Guid userId, Guid conversationId, CancellationToken ct = default)
     {
         var conversation = await _context.Conversations
+            .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == conversationId, ct)
             ?? throw new KeyNotFoundException("Conversation not found.");
 
@@ -136,6 +138,7 @@ public class MessagingService : IMessagingService
         }
 
         var messages = await _context.Messages
+            .AsNoTracking()
             .Include(m => m.Sender)
             .Where(m => m.ConversationId == conversationId)
             .OrderBy(m => m.SentAt)

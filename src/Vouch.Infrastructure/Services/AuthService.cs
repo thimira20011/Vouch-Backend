@@ -89,6 +89,7 @@ public class AuthService : IAuthService
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
         var user = await _context.Users
+            .AsNoTracking()
             .FirstOrDefaultAsync(u => u.Email.ToLower() == request.Email.ToLower().Trim(), ct)
             ?? throw new UnauthorizedAccessException("Invalid email or password.");
 

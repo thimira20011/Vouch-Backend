@@ -136,11 +136,14 @@ public class ModerationService : IModerationService
 
     public async Task<ArchitectDashboardDto> GetArchitectDashboardAsync(Guid campusId, CancellationToken ct = default)
     {
-        var campus = await _context.Campuses.FirstOrDefaultAsync(c => c.Id == campusId, ct)
+        var campus = await _context.Campuses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == campusId, ct)
             ?? throw new KeyNotFoundException("Campus not found.");
 
         // Count ambassadors and vouches (REQ-A2, REQ-A5)
         var ambassadors = await _context.Users
+            .AsNoTracking()
             .Where(u => u.CampusId == campusId && u.Role == UserRole.Ambassador && u.Status == AccountStatus.Active)
             .Include(u => u.VouchesGiven)
             .ToListAsync(ct);
@@ -162,6 +165,7 @@ public class ModerationService : IModerationService
         var totalIncubation = await _context.Users.CountAsync(u => u.CampusId == campusId && u.Status == AccountStatus.InIncubation, ct);
 
         var pendingReports = await _context.Reports
+            .AsNoTracking()
             .Include(r => r.Reporter)
             .Include(r => r.ReportedUser)
             .Where(r => r.Status == ReportStatus.Pending)

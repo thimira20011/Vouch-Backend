@@ -19,6 +19,7 @@ public class MatchService : IMatchService
     public async Task<TodayConnectionResponse> GetTodayConnectionAsync(Guid userId, CancellationToken ct = default)
     {
         var user = await _context.Users
+            .AsNoTracking()
             .Include(u => u.Campus)
             .FirstOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new KeyNotFoundException("User not found.");
@@ -27,6 +28,7 @@ public class MatchService : IMatchService
 
         // 1. Check if user already has a match for today
         var existingMatch = await _context.Matches
+            .AsNoTracking()
             .Include(m => m.UserA)
             .Include(m => m.UserB)
             .FirstOrDefaultAsync(m => (m.UserAId == userId || m.UserBId == userId) && m.CycleDate == today, ct);
@@ -58,10 +60,11 @@ public class MatchService : IMatchService
         // 2. If no match exists today, fetch Daily Reflection (REQ-12)
         var primaryInterest = user.IntellectualInterests.FirstOrDefault();
         var reflection = await _context.Reflections
+            .AsNoTracking()
             .Where(r => r.Category == primaryInterest)
-            .OrderBy(r => Guid.NewGuid()) // Random for the day
+            .OrderBy(r => Guid.NewGuid())
             .FirstOrDefaultAsync(ct)
-            ?? await _context.Reflections.OrderBy(r => Guid.NewGuid()).FirstOrDefaultAsync(ct);
+            ?? await _context.Reflections.AsNoTracking().OrderBy(r => Guid.NewGuid()).FirstOrDefaultAsync(ct);
 
         var reflectionDto = reflection != null
             ? new DailyReflectionDto(
@@ -132,11 +135,12 @@ public class MatchService : IMatchService
             .ToListAsync(ct);
 
         // Get blocked pairs
-        var blockedPairs = await _context.Blocks.Select(b => new { b.BlockerId, b.BlockedUserId }).ToListAsync(ct);
+        var blockedPairs = await _context.Blocks.AsNoTracking().Select(b => new { b.BlockerId, b.BlockedUserId }).ToListAsync(ct);
         var blockedSet = new HashSet<(Guid, Guid)>(blockedPairs.Select(b => (b.BlockerId, b.BlockedUserId)));
 
         // Get already matched today
         var existingMatchesToday = await _context.Matches
+            .AsNoTracking()
             .Where(m => m.CampusId == campusId && m.CycleDate == today)
             .Select(m => new { m.UserAId, m.UserBId })
             .ToListAsync(ct);

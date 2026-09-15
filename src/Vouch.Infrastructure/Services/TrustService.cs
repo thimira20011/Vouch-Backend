@@ -130,6 +130,7 @@ public class TrustService : ITrustService
     public async Task<TrustScoreSummaryDto> GetUserTrustSummaryAsync(Guid userId, CancellationToken ct = default)
     {
         var user = await _context.Users
+            .AsNoTracking()
             .Include(u => u.VouchesReceived)
                 .ThenInclude(v => v.VoucherUser)
             .FirstOrDefaultAsync(u => u.Id == userId, ct)
