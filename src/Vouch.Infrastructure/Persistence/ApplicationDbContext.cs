@@ -16,6 +16,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Campus> Campuses => Set<Campus>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<AmbassadorInvite> AmbassadorInvites => Set<AmbassadorInvite>();
     public DbSet<VouchRecord> Vouches => Set<VouchRecord>();
     public DbSet<DailyMatch> Matches => Set<DailyMatch>();
     public DbSet<DailyReflection> Reflections => Set<DailyReflection>();
@@ -201,6 +202,20 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             builder.Property(r => r.Quote).HasMaxLength(500);
             builder.Property(r => r.Author).HasMaxLength(150);
             builder.Property(r => r.ThoughtProvokingQuestion).HasMaxLength(500);
+        });
+
+        // AmbassadorInvite Configuration (REQ-A1, Step 8)
+        modelBuilder.Entity<AmbassadorInvite>(builder =>
+        {
+            builder.HasKey(i => i.Id);
+            builder.HasIndex(i => i.Token).IsUnique();
+            builder.Property(i => i.Token).HasMaxLength(128).IsRequired();
+            builder.Property(i => i.IntendedEmail).HasMaxLength(120);
+
+            builder.HasOne(i => i.Campus)
+                .WithMany()
+                .HasForeignKey(i => i.CampusId)
+                .OnDelete(DeleteBehavior.Cascade);
         });
     }
 }

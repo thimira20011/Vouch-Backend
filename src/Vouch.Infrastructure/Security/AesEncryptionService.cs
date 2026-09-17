@@ -11,8 +11,14 @@ public class AesEncryptionService : IEncryptionService
 
     public AesEncryptionService(IConfiguration configuration)
     {
-        var keyString = configuration["Security:EncryptionKey"] ?? "VouchSuperSecretEncryptionKey32Chars!";
-        _key = SHA256.HashData(Encoding.UTF8.GetBytes(keyString)); // Ensure 256 bits
+        var keyString = configuration["Security:EncryptionKey"]
+            ?? throw new InvalidOperationException(
+                "Security:EncryptionKey is not configured. Set it via environment variable or user secrets.");
+
+        if (keyString.Length < 16)
+            throw new InvalidOperationException("Security:EncryptionKey must be at least 16 characters.");
+
+        _key = SHA256.HashData(Encoding.UTF8.GetBytes(keyString)); // Always 256 bits via SHA-256
     }
 
     public string Encrypt(string plainText)

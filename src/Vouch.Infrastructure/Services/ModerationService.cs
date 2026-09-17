@@ -194,4 +194,39 @@ public class ModerationService : IModerationService
             TrustScoreAnomalies: new List<string>()
         );
     }
+
+    public async Task<AmbassadorInviteDto> CreateAmbassadorInviteAsync(
+        Guid architectId,
+        CreateAmbassadorInviteRequest request,
+        CancellationToken ct = default)
+    {
+        var campus = await _context.Campuses
+            .AsNoTracking()
+            .FirstOrDefaultAsync(c => c.Id == request.CampusId, ct)
+            ?? throw new KeyNotFoundException($"Campus '{request.CampusId}' not found.");
+
+        // Generate cryptographically random 64-byte URL-safe token (REQ-A1)
+        var tokenBytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(64);
+        var token = Convert.ToBase64String(tokenBytes)
+            .Replace("+", "-").Replace("/", "_").Replace("=", ""); // URL-safe Base64
+
+        var invite = new Vouch.Domain.Entities.AmbassadorInvite
+        {
+            CampusId = campus.Id,
+            IssuedByArchitectId = architectId,
+            Token = token,
+            IntendedEmail = request.IntendedEmail,
+            ExpiresAt = DateTimeOffset.UtcNow.AddDays(7)
+        };
+
+        _context.AmbassadorInvites.Add(invite);
+        await _context.SaveChangesAsync(ct);
+
+        return new AmbassadorInviteDto(
+            InviteId: invite.Id,
+            Token: invite.Token,
+            IntendedEmail: invite.IntendedEmail,
+            ExpiresAt: invite.ExpiresAt
+        );
+    }
 }

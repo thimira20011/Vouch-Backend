@@ -80,6 +80,34 @@ public static class ModerationEndpoints
         .WithName("ResolveReport")
         .WithSummary("Uphold or dismiss a moderation report (3 upheld triggers 90-day auto-suspension)");
 
+        // REQ-A1: Architect issues single-use ambassador invite tokens
+        moderationGroup.MapPost("/invites", async (
+            CreateAmbassadorInviteRequest request,
+            ClaimsPrincipal principal,
+            IModerationService moderationService,
+            CancellationToken ct) =>
+        {
+            var architectIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
+            if (!Guid.TryParse(architectIdStr, out var architectId)) return Results.Unauthorized();
+
+            try
+            {
+                var invite = await moderationService.CreateAmbassadorInviteAsync(architectId, request, ct);
+                return Results.Created($"/api/moderation/invites/{invite.InviteId}", invite);
+            }
+            catch (KeyNotFoundException ex)
+            {
+                return Results.NotFound(new { error = ex.Message });
+            }
+            catch (UnauthorizedAccessException)
+            {
+                return Results.Forbid();
+            }
+        })
+        .RequireAuthorization("ArchitectOnly")
+        .WithName("CreateAmbassadorInvite")
+        .WithSummary("Issue a single-use ambassador invite token (Architect only, REQ-A1)");
+
         return app;
     }
 }

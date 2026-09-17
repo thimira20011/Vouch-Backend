@@ -9,7 +9,8 @@ public record RegisterRequest(
     string Faculty,
     string Department,
     int AcademicYear,
-    string CampusCode
+    string CampusCode,
+    string? InviteToken = null  // Required during bootstrap phase (REQ-A5)
 );
 
 public record LoginRequest(

@@ -11,15 +11,18 @@ public class AuthService : IAuthService
     private readonly IApplicationDbContext _context;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenService _jwtTokenService;
+    private readonly IEncryptionService _encryption;
 
     public AuthService(
         IApplicationDbContext context,
         IPasswordHasher passwordHasher,
-        IJwtTokenService jwtTokenService)
+        IJwtTokenService jwtTokenService,
+        IEncryptionService encryption)
     {
         _context = context;
         _passwordHasher = passwordHasher;
         _jwtTokenService = jwtTokenService;
+        _encryption = encryption;
     }
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
@@ -28,8 +31,9 @@ public class AuthService : IAuthService
             ?? throw new KeyNotFoundException($"Campus '{request.CampusCode}' not found.");
 
         // REQ-1: Users must verify identity via a .ac.lk or university-approved email domain
-        if (!request.Email.EndsWith(campus.DomainPattern, StringComparison.OrdinalIgnoreCase) &&
-            !request.Email.EndsWith(".ac.lk", StringComparison.OrdinalIgnoreCase))
+        var normalizedEmail = request.Email.ToLower().Trim();
+        if (!normalizedEmail.EndsWith(campus.DomainPattern, StringComparison.OrdinalIgnoreCase) &&
+            !normalizedEmail.EndsWith(".ac.lk", StringComparison.OrdinalIgnoreCase))
         {
             throw new ArgumentException($"Registration requires a verified university email matching '{campus.DomainPattern}' or '.ac.lk'.");
         }
@@ -37,28 +41,36 @@ public class AuthService : IAuthService
         // REQ-A5: Soft Launch Gate: general registration locked until campus reaches 30 active Ambassadors with vouches
         if (!campus.IsSoftLaunchUnlocked)
         {
-            // Allow only pre-approved ambassador registrations during bootstrap
-            var isAmbassadorRegistration = request.Email.Contains("ambassador", StringComparison.OrdinalIgnoreCase);
-            if (!isAmbassadorRegistration)
-            {
-                throw new InvalidOperationException("General registration is locked. The campus is currently in the Ambassador bootstrap phase.");
-            }
+            if (request.InviteToken is null)
+                throw new InvalidOperationException("General registration is locked. A valid ambassador invite token is required.");
+
+            var invite = await _context.AmbassadorInvites
+                .FirstOrDefaultAsync(i => i.Token == request.InviteToken &&
+                                          i.CampusId == campus.Id &&
+                                          !i.IsUsed &&
+                                          i.ExpiresAt > DateTimeOffset.UtcNow, ct)
+                ?? throw new InvalidOperationException("The invite token is invalid or has expired.");
+
+            invite.IsUsed = true;
+            invite.UsedAt = DateTimeOffset.UtcNow;
         }
 
-        var emailExists = await _context.Users.AnyAsync(u => u.Email.ToLower() == request.Email.ToLower(), ct);
+        // NFR-9: Encrypt PII before storing
+        var encryptedEmail = _encryption.Encrypt(normalizedEmail);
+        var emailExists = await _context.Users.AnyAsync(u => u.Email == encryptedEmail, ct);
         if (emailExists)
         {
             throw new InvalidOperationException("An account with this university email already exists.");
         }
 
-        var isAmbassador = request.Email.Contains("ambassador", StringComparison.OrdinalIgnoreCase);
+        var isAmbassador = request.InviteToken is not null; // if they had an invite, they're an ambassador
 
         var user = new User
         {
             CampusId = campus.Id,
-            Email = request.Email.ToLower().Trim(),
+            Email = _encryption.Encrypt(normalizedEmail),     // NFR-9: PII encrypted at rest
             PasswordHash = _passwordHasher.HashPassword(request.Password),
-            FullName = request.FullName.Trim(),
+            FullName = _encryption.Encrypt(request.FullName.Trim()), // NFR-9
             Faculty = request.Faculty.Trim(),
             Department = request.Department.Trim(),
             AcademicYear = request.AcademicYear,
@@ -76,8 +88,8 @@ public class AuthService : IAuthService
 
         return new AuthResponse(
             UserId: user.Id,
-            Email: user.Email,
-            FullName: user.FullName,
+            Email: _encryption.Decrypt(user.Email),           // Decrypt for response
+            FullName: _encryption.Decrypt(user.FullName),     // Decrypt for response
             Role: user.Role.ToString(),
             Status: user.Status.ToString(),
             TrustScore: user.TrustScore,
@@ -88,9 +100,11 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
+        // Encrypt the lookup email to match stored encrypted value (NFR-9)
+        var encryptedEmail = _encryption.Encrypt(request.Email.ToLower().Trim());
         var user = await _context.Users
             .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Email.ToLower() == request.Email.ToLower().Trim(), ct)
+            .FirstOrDefaultAsync(u => u.Email == encryptedEmail, ct)
             ?? throw new UnauthorizedAccessException("Invalid email or password.");
 
         if (user.Status == AccountStatus.Suspended)
@@ -107,8 +121,8 @@ public class AuthService : IAuthService
 
         return new AuthResponse(
             UserId: user.Id,
-            Email: user.Email,
-            FullName: user.FullName,
+            Email: _encryption.Decrypt(user.Email),        // Decrypt PII for response
+            FullName: _encryption.Decrypt(user.FullName),  // Decrypt PII for response
             Role: user.Role.ToString(),
             Status: user.Status.ToString(),
             TrustScore: user.TrustScore,
@@ -122,12 +136,18 @@ public class AuthService : IAuthService
         var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new KeyNotFoundException("User not found.");
 
-        if (request.Bio.Length > 280)
+        if (!string.IsNullOrEmpty(request.Bio))
         {
-            throw new ArgumentException("Bio must not exceed 280 characters.");
+            if (request.Bio.Length > 280)
+                throw new ArgumentException("Bio must not exceed 280 characters.");
+            user.Bio = _encryption.Encrypt(request.Bio); // NFR-9: encrypt PII
         }
-
-        user.Bio = request.Bio;
+        else
+        {
+            if (request.Bio?.Length > 280)
+                throw new ArgumentException("Bio must not exceed 280 characters.");
+            user.Bio = request.Bio ?? string.Empty;
+        }
         user.DeepValues = request.DeepValues;
         user.IntellectualInterests = request.IntellectualInterests;
 

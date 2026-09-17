@@ -7,6 +7,7 @@ public interface IApplicationDbContext
 {
     DbSet<Campus> Campuses { get; }
     DbSet<User> Users { get; }
+    DbSet<AmbassadorInvite> AmbassadorInvites { get; }
     DbSet<VouchRecord> Vouches { get; }
     DbSet<DailyMatch> Matches { get; }
     DbSet<DailyReflection> Reflections { get; }
