@@ -131,6 +131,9 @@ using (var scope = app.Services.CreateScope())
 }
 
 // 5. Configure HTTP Pipeline
+// Exception handler MUST be first so it wraps the entire pipeline (Step 10)
+app.UseMiddleware<Vouch.Api.Middleware.GlobalExceptionHandlerMiddleware>();
+
 if (app.Environment.IsDevelopment())
 {
     app.MapOpenApi();

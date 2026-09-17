@@ -14,15 +14,8 @@ public static class ModerationEndpoints
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var reporterId)) return Results.Unauthorized();
 
-            try
-            {
-                var report = await moderationService.SubmitReportAsync(reporterId, request, ct);
-                return Results.Created($"/api/moderation/report/{report.Id}", report);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return Results.NotFound(new { error = ex.Message });
-            }
+            var report = await moderationService.SubmitReportAsync(reporterId, request, ct);
+            return Results.Created($"/api/moderation/report/{report.Id}", report);
         })
         .WithName("SubmitReport")
         .WithSummary("Report a profile or message (soft-hides reported user)");
@@ -32,15 +25,8 @@ public static class ModerationEndpoints
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var blockerId)) return Results.Unauthorized();
 
-            try
-            {
-                await moderationService.BlockUserAsync(blockerId, request, ct);
-                return Results.Ok(new { message = "User blocked successfully." });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.BadRequest(new { error = ex.Message });
-            }
+            await moderationService.BlockUserAsync(blockerId, request, ct);
+            return Results.Ok(new { message = "User blocked successfully." });
         })
         .WithName("BlockUser")
         .WithSummary("Block user from interactions, profiles, and matches");
@@ -49,15 +35,8 @@ public static class ModerationEndpoints
 
         architectGroup.MapGet("/dashboard/{campusId:guid}", async (Guid campusId, IModerationService moderationService, CancellationToken ct) =>
         {
-            try
-            {
-                var dashboard = await moderationService.GetArchitectDashboardAsync(campusId, ct);
-                return Results.Ok(dashboard);
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
+            var dashboard = await moderationService.GetArchitectDashboardAsync(campusId, ct);
+            return Results.Ok(dashboard);
         })
         .WithName("GetArchitectDashboard")
         .WithSummary("View Launch Readiness Score, pending reports, and trust anomalies");
@@ -67,15 +46,8 @@ public static class ModerationEndpoints
             var architectIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(architectIdStr, out var architectId)) return Results.Unauthorized();
 
-            try
-            {
-                await moderationService.ResolveReportAsync(architectId, id, body.Uphold, body.Notes, ct);
-                return Results.Ok(new { message = body.Uphold ? "Report upheld." : "Report dismissed." });
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
+            await moderationService.ResolveReportAsync(architectId, id, body.Uphold, body.Notes, ct);
+            return Results.Ok(new { message = body.Uphold ? "Report upheld." : "Report dismissed." });
         })
         .WithName("ResolveReport")
         .WithSummary("Uphold or dismiss a moderation report (3 upheld triggers 90-day auto-suspension)");
@@ -90,19 +62,8 @@ public static class ModerationEndpoints
             var architectIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(architectIdStr, out var architectId)) return Results.Unauthorized();
 
-            try
-            {
-                var invite = await moderationService.CreateAmbassadorInviteAsync(architectId, request, ct);
-                return Results.Created($"/api/moderation/invites/{invite.InviteId}", invite);
-            }
-            catch (KeyNotFoundException ex)
-            {
-                return Results.NotFound(new { error = ex.Message });
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Forbid();
-            }
+            var invite = await moderationService.CreateAmbassadorInviteAsync(architectId, request, ct);
+            return Results.Created($"/api/moderation/invites/{invite.InviteId}", invite);
         })
         .RequireAuthorization("ArchitectOnly")
         .WithName("CreateAmbassadorInvite")

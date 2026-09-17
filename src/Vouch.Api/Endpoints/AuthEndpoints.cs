@@ -11,19 +11,8 @@ public static class AuthEndpoints
 
         group.MapPost("/register", async (RegisterRequest request, IAuthService authService, CancellationToken ct) =>
         {
-            try
-            {
-                var response = await authService.RegisterAsync(request, ct);
-                return Results.Created($"/api/users/{response.UserId}", response);
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(new { error = ex.Message });
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Conflict(new { error = ex.Message });
-            }
+            var response = await authService.RegisterAsync(request, ct);
+            return Results.Created($"/api/users/{response.UserId}", response);
         })
         .WithName("Register")
         .WithSummary("Register with .ac.lk university email")
@@ -31,19 +20,8 @@ public static class AuthEndpoints
 
         group.MapPost("/login", async (LoginRequest request, IAuthService authService, CancellationToken ct) =>
         {
-            try
-            {
-                var response = await authService.LoginAsync(request, ct);
-                return Results.Ok(response);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Unauthorized();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.Problem(detail: ex.Message, statusCode: 403);
-            }
+            var response = await authService.LoginAsync(request, ct);
+            return Results.Ok(response);
         })
         .WithName("Login")
         .WithSummary("Login to account")
@@ -54,15 +32,8 @@ public static class AuthEndpoints
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
-            try
-            {
-                await authService.CompleteOnboardingAsync(userId, request, ct);
-                return Results.Ok(new { message = "Onboarding completed successfully." });
-            }
-            catch (ArgumentException ex)
-            {
-                return Results.BadRequest(new { error = ex.Message });
-            }
+            await authService.CompleteOnboardingAsync(userId, request, ct);
+            return Results.Ok(new { message = "Onboarding completed successfully." });
         })
         .RequireAuthorization()
         .WithName("CompleteOnboarding")

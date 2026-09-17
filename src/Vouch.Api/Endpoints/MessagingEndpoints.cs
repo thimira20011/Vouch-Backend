@@ -25,19 +25,8 @@ public static class MessagingEndpoints
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
-            try
-            {
-                var messages = await messagingService.GetConversationMessagesAsync(userId, id, ct);
-                return Results.Ok(messages);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Forbid();
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
+            var messages = await messagingService.GetConversationMessagesAsync(userId, id, ct);
+            return Results.Ok(messages);
         })
         .WithName("GetConversationMessages")
         .WithSummary("Get full letter message history");
@@ -47,23 +36,8 @@ public static class MessagingEndpoints
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
-            try
-            {
-                var message = await messagingService.SendMessageAsync(userId, id, body, ct);
-                return Results.Created($"/api/conversations/{id}/messages/{message.Id}", message);
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Forbid();
-            }
-            catch (InvalidOperationException ex)
-            {
-                return Results.BadRequest(new { error = ex.Message });
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
+            var message = await messagingService.SendMessageAsync(userId, id, body, ct);
+            return Results.Created($"/api/conversations/{id}/messages/{message.Id}", message);
         })
         .WithName("SendMessage")
         .WithSummary("Send letter-style message (evaluates Slow-Burn progression)");
@@ -73,15 +47,8 @@ public static class MessagingEndpoints
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
-            try
-            {
-                await messagingService.PauseConversationAsync(userId, id, ct);
-                return Results.Ok(new { message = "Conversation paused. No rush, take your time." });
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Forbid();
-            }
+            await messagingService.PauseConversationAsync(userId, id, ct);
+            return Results.Ok(new { message = "Conversation paused. No rush, take your time." });
         })
         .WithName("PauseConversation")
         .WithSummary("Pause chat with gentle non-accusatory notice (REQ-21)");
@@ -91,15 +58,8 @@ public static class MessagingEndpoints
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
-            try
-            {
-                await messagingService.ResumeConversationAsync(userId, id, ct);
-                return Results.Ok(new { message = "Conversation resumed." });
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Forbid();
-            }
+            await messagingService.ResumeConversationAsync(userId, id, ct);
+            return Results.Ok(new { message = "Conversation resumed." });
         })
         .WithName("ResumeConversation")
         .WithSummary("Resume previously paused chat");

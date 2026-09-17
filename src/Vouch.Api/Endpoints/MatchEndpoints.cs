@@ -14,15 +14,8 @@ public static class MatchEndpoints
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
-            try
-            {
-                var response = await matchService.GetTodayConnectionAsync(userId, ct);
-                return Results.Ok(response);
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
+            var response = await matchService.GetTodayConnectionAsync(userId, ct);
+            return Results.Ok(response);
         })
         .WithName("GetTodayConnection")
         .WithSummary("Get 1 daily match OR No Match Today with Daily Reflection");
@@ -32,25 +25,16 @@ public static class MatchEndpoints
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
-            try
+            var acceptedBoth = await matchService.RespondToMatchAsync(userId, matchId, request.Accept, ct);
+            return Results.Ok(new
             {
-                var acceptedBoth = await matchService.RespondToMatchAsync(userId, matchId, request.Accept, ct);
-                return Results.Ok(new
-                {
-                    matchId,
-                    accepted = request.Accept,
-                    isMutualMatch = acceptedBoth,
-                    message = acceptedBoth ? "Mutual connection established! Letter conversation unlocked." : "Response recorded."
-                });
-            }
-            catch (UnauthorizedAccessException)
-            {
-                return Results.Forbid();
-            }
-            catch (KeyNotFoundException)
-            {
-                return Results.NotFound();
-            }
+                matchId,
+                accepted = request.Accept,
+                isMutualMatch = acceptedBoth,
+                message = acceptedBoth
+                    ? "Mutual connection established! Letter conversation unlocked."
+                    : "Response recorded."
+            });
         })
         .WithName("RespondToMatch")
         .WithSummary("Accept or decline today's connection");
