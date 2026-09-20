@@ -26,6 +26,10 @@ public static class DependencyInjection
 
         services.AddScoped<IApplicationDbContext>(sp => sp.GetRequiredService<ApplicationDbContext>());
 
+        // Step 12: Health checks — DB ping via Npgsql probe
+        services.AddHealthChecks()
+            .AddNpgSql(connectionString, name: "postgres", tags: ["db", "postgres"]);
+
         // Security & Crypto
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenService, JwtTokenService>();

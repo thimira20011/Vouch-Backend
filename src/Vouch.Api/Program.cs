@@ -70,12 +70,16 @@ builder.Services.AddAuthorization(options =>
     options.AddPolicy("ArchitectOnly", policy => policy.RequireRole("Architect"));
 });
 
-// 3. CORS Configuration for React 19 Frontend
+// 3. CORS Configuration — Step 13: Origins read from config for env-specific overrides
+var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
+if (allowedOrigins is null || allowedOrigins.Length == 0)
+    throw new InvalidOperationException("Cors:AllowedOrigins is not configured. Add at least one origin to appsettings.json.");
+
 builder.Services.AddCors(options =>
 {
     options.AddPolicy("VouchCorsPolicy", policy =>
     {
-        policy.WithOrigins("http://localhost:5173", "http://localhost:3000")
+        policy.WithOrigins(allowedOrigins)
               .AllowAnyHeader()
               .AllowAnyMethod()
               .AllowCredentials();
@@ -161,6 +165,9 @@ app.MapModerationEndpoints();
 
 // 7. Map SignalR Hub
 app.MapHub<VouchHub>("/hubs/vouch");
+
+// Step 12: Health check endpoint — used by Docker HEALTHCHECK and load balancer probes
+app.MapHealthChecks("/healthz");
 
 app.MapGet("/", () => Results.Ok(new
 {

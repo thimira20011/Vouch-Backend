@@ -1,3 +1,4 @@
+using Vouch.Application.Common;
 using Vouch.Domain.Enums;
 
 namespace Vouch.Application.Features.Messaging;
@@ -29,8 +30,8 @@ public record ConversationDto(
 public interface IMessagingService
 {
     Task<MessageDto> SendMessageAsync(Guid senderId, Guid conversationId, SendMessageRequest request, CancellationToken ct = default);
-    Task<IReadOnlyList<ConversationDto>> GetUserConversationsAsync(Guid userId, CancellationToken ct = default);
-    Task<IReadOnlyList<MessageDto>> GetConversationMessagesAsync(Guid userId, Guid conversationId, CancellationToken ct = default);
+    Task<PagedResult<ConversationDto>> GetUserConversationsAsync(Guid userId, int page = 1, int pageSize = 20, CancellationToken ct = default);
+    Task<PagedResult<MessageDto>> GetConversationMessagesAsync(Guid userId, Guid conversationId, int page = 1, int pageSize = 50, CancellationToken ct = default);
     Task<bool> PauseConversationAsync(Guid userId, Guid conversationId, CancellationToken ct = default);
     Task<bool> ResumeConversationAsync(Guid userId, Guid conversationId, CancellationToken ct = default);
     Task ProcessInactivityChecksAsync(CancellationToken ct = default); // 21 days nudge, 30 days archive

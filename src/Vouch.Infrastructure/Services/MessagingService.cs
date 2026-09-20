@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Vouch.Application.Common;
 using Vouch.Application.Common.Interfaces;
 using Vouch.Application.Features.Messaging;
 using Vouch.Domain.Entities;
@@ -92,17 +93,26 @@ public class MessagingService : IMessagingService
         );
     }
 
-    public async Task<IReadOnlyList<ConversationDto>> GetUserConversationsAsync(Guid userId, CancellationToken ct = default)
+    public async Task<PagedResult<ConversationDto>> GetUserConversationsAsync(Guid userId, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
-        var conversations = await _context.Conversations
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
+        var baseQuery = _context.Conversations
             .AsNoTracking()
+            .Where(c => c.UserAId == userId || c.UserBId == userId);
+
+        var totalCount = await baseQuery.CountAsync(ct);
+
+        var conversations = await baseQuery
             .Include(c => c.UserA)
             .Include(c => c.UserB)
-            .Where(c => c.UserAId == userId || c.UserBId == userId)
             .OrderByDescending(c => c.LastMessageAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(ct);
 
-        return conversations.Select(c =>
+        var items = conversations.Select(c =>
         {
             var otherUser = c.UserAId == userId ? c.UserB : c.UserA;
             // Reveal photo depending on stage (REQ-17)
@@ -123,10 +133,15 @@ public class MessagingService : IMessagingService
                 LastMessageAt: c.LastMessageAt
             );
         }).ToList();
+
+        return new PagedResult<ConversationDto>(items, page, pageSize, totalCount);
     }
 
-    public async Task<IReadOnlyList<MessageDto>> GetConversationMessagesAsync(Guid userId, Guid conversationId, CancellationToken ct = default)
+    public async Task<PagedResult<MessageDto>> GetConversationMessagesAsync(Guid userId, Guid conversationId, int page = 1, int pageSize = 50, CancellationToken ct = default)
     {
+        page = Math.Max(1, page);
+        pageSize = Math.Clamp(pageSize, 1, 100);
+
         var conversation = await _context.Conversations
             .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == conversationId, ct)
@@ -137,11 +152,17 @@ public class MessagingService : IMessagingService
             throw new UnauthorizedAccessException("Not authorized to view these messages.");
         }
 
-        var messages = await _context.Messages
+        var baseQuery = _context.Messages
             .AsNoTracking()
+            .Where(m => m.ConversationId == conversationId);
+
+        var totalCount = await baseQuery.CountAsync(ct);
+
+        var messages = await baseQuery
             .Include(m => m.Sender)
-            .Where(m => m.ConversationId == conversationId)
             .OrderBy(m => m.SentAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .Select(m => new MessageDto(
                 m.Id,
                 m.SenderId,
@@ -152,7 +173,7 @@ public class MessagingService : IMessagingService
             ))
             .ToListAsync(ct);
 
-        return messages;
+        return new PagedResult<MessageDto>(messages, page, pageSize, totalCount);
     }
 
     public async Task<bool> PauseConversationAsync(Guid userId, Guid conversationId, CancellationToken ct = default)

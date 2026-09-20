@@ -10,27 +10,40 @@ public static class MessagingEndpoints
     {
         var group = app.MapGroup("/api/conversations").WithTags("Letter Messaging & Slow-Burn").RequireAuthorization();
 
-        group.MapGet("/", async (ClaimsPrincipal principal, IMessagingService messagingService, CancellationToken ct) =>
+        // Step 14: page + pageSize as query params with defaults (20 conversations per page)
+        group.MapGet("/", async (
+            ClaimsPrincipal principal,
+            IMessagingService messagingService,
+            int page = 1,
+            int pageSize = 20,
+            CancellationToken ct = default) =>
         {
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
-            var conversations = await messagingService.GetUserConversationsAsync(userId, ct);
-            return Results.Ok(conversations);
+            var result = await messagingService.GetUserConversationsAsync(userId, page, pageSize, ct);
+            return Results.Ok(result);
         })
         .WithName("GetUserConversations")
-        .WithSummary("Get active and paused conversations");
+        .WithSummary("Get active and paused conversations (paginated)");
 
-        group.MapGet("/{id:guid}/messages", async (Guid id, ClaimsPrincipal principal, IMessagingService messagingService, CancellationToken ct) =>
+        // Step 14: page + pageSize as query params with defaults (50 messages per page)
+        group.MapGet("/{id:guid}/messages", async (
+            Guid id,
+            ClaimsPrincipal principal,
+            IMessagingService messagingService,
+            int page = 1,
+            int pageSize = 50,
+            CancellationToken ct = default) =>
         {
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
-            var messages = await messagingService.GetConversationMessagesAsync(userId, id, ct);
-            return Results.Ok(messages);
+            var result = await messagingService.GetConversationMessagesAsync(userId, id, page, pageSize, ct);
+            return Results.Ok(result);
         })
         .WithName("GetConversationMessages")
-        .WithSummary("Get full letter message history");
+        .WithSummary("Get full letter message history (paginated)");
 
         group.MapPost("/{id:guid}/messages", async (Guid id, SendMessageRequest body, ClaimsPrincipal principal, IMessagingService messagingService, CancellationToken ct) =>
         {

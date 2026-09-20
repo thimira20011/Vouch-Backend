@@ -26,4 +26,9 @@ ENV ASPNETCORE_URLS=http://+:8080
 ENV DOTNET_EnableDiagnostics=0
 
 COPY --from=build /app/publish .
+
+# Step 12: Health check — Docker monitors container liveness via /healthz
+HEALTHCHECK --interval=30s --timeout=10s --start-period=5s --retries=3 \
+    CMD wget --quiet --tries=1 --spider http://localhost:8080/healthz || exit 1
+
 ENTRYPOINT ["dotnet", "Vouch.Api.dll"]
