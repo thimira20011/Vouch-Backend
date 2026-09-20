@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Vouch.Api.Middleware;
 using Vouch.Application.Features.Vouching;
 
 namespace Vouch.Api.Endpoints;
@@ -17,6 +18,7 @@ public static class VouchEndpoints
             var vouch = await trustService.SubmitVouchAsync(voucherId, request, ct);
             return Results.Created($"/api/vouches/{vouch.Id}", vouch);
         })
+        .AddEndpointFilter<ValidationFilter<SubmitVouchRequest>>()
         .WithName("SubmitVouch")
         .WithSummary("Vouch for a peer confirming character traits");
 

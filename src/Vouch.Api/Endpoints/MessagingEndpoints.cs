@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Vouch.Api.Middleware;
 using Vouch.Application.Features.Messaging;
 
 namespace Vouch.Api.Endpoints;
@@ -39,6 +40,7 @@ public static class MessagingEndpoints
             var message = await messagingService.SendMessageAsync(userId, id, body, ct);
             return Results.Created($"/api/conversations/{id}/messages/{message.Id}", message);
         })
+        .AddEndpointFilter<ValidationFilter<SendMessageRequest>>()
         .WithName("SendMessage")
         .WithSummary("Send letter-style message (evaluates Slow-Burn progression)");
 

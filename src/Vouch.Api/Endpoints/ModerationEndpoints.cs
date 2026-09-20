@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Vouch.Api.Middleware;
 using Vouch.Application.Features.Moderation;
 
 namespace Vouch.Api.Endpoints;
@@ -17,6 +18,7 @@ public static class ModerationEndpoints
             var report = await moderationService.SubmitReportAsync(reporterId, request, ct);
             return Results.Created($"/api/moderation/report/{report.Id}", report);
         })
+        .AddEndpointFilter<ValidationFilter<CreateReportRequest>>()
         .WithName("SubmitReport")
         .WithSummary("Report a profile or message (soft-hides reported user)");
 
@@ -65,6 +67,7 @@ public static class ModerationEndpoints
             var invite = await moderationService.CreateAmbassadorInviteAsync(architectId, request, ct);
             return Results.Created($"/api/moderation/invites/{invite.InviteId}", invite);
         })
+        .AddEndpointFilter<ValidationFilter<CreateAmbassadorInviteRequest>>()
         .RequireAuthorization("ArchitectOnly")
         .WithName("CreateAmbassadorInvite")
         .WithSummary("Issue a single-use ambassador invite token (Architect only, REQ-A1)");

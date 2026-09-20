@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Vouch.Api.Middleware;
 using Vouch.Application.Features.Auth;
 
 namespace Vouch.Api.Endpoints;
@@ -14,6 +15,7 @@ public static class AuthEndpoints
             var response = await authService.RegisterAsync(request, ct);
             return Results.Created($"/api/users/{response.UserId}", response);
         })
+        .AddEndpointFilter<ValidationFilter<RegisterRequest>>()
         .WithName("Register")
         .WithSummary("Register with .ac.lk university email")
         .RequireRateLimiting("auth_strict");
@@ -23,6 +25,7 @@ public static class AuthEndpoints
             var response = await authService.LoginAsync(request, ct);
             return Results.Ok(response);
         })
+        .AddEndpointFilter<ValidationFilter<LoginRequest>>()
         .WithName("Login")
         .WithSummary("Login to account")
         .RequireRateLimiting("auth_strict");
@@ -35,6 +38,7 @@ public static class AuthEndpoints
             await authService.CompleteOnboardingAsync(userId, request, ct);
             return Results.Ok(new { message = "Onboarding completed successfully." });
         })
+        .AddEndpointFilter<ValidationFilter<CompleteOnboardingRequest>>()
         .RequireAuthorization()
         .WithName("CompleteOnboarding")
         .WithSummary("Submit Deep Values, Intellectual Interests, and Bio")

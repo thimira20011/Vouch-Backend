@@ -1,9 +1,11 @@
 using System.Text;
+using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Vouch.Api.Endpoints;
 using Vouch.Application.Common.Interfaces;
+using Vouch.Application.Features.Auth;
 using Vouch.Infrastructure;
 using Vouch.Infrastructure.Persistence;
 using Vouch.Infrastructure.SignalR;
@@ -81,6 +83,10 @@ builder.Services.AddCors(options =>
 });
 
 builder.Services.AddOpenApi();
+
+// Step 11: Register all FluentValidation validators from Vouch.Application assembly
+// New validators are auto-discovered — no changes needed here when adding validators
+builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 // 4. Rate Limiting — brute-force protection on auth endpoints (Step 7)
 builder.Services.AddRateLimiter(options =>
