@@ -247,7 +247,8 @@ public class MessagingService : IMessagingService
         foreach (var conv in toNudge)
         {
             conv.InactivityNudgeSentAt = now;
-            // Send nudge notification
+            // REQ-23: Nudge both participants via SignalR (Step 15)
+            await _notificationService.NotifyInactivityNudgeAsync(conv.UserAId, conv.UserBId, conv.Id, ct);
         }
 
         await _context.SaveChangesAsync(ct);

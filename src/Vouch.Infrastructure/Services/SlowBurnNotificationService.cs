@@ -98,4 +98,29 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
             },
             cancellationToken);
     }
+
+    /// <summary>
+    /// REQ-23: Sends a gentle re-engagement nudge to both participants.
+    /// Fired when a conversation has been silent for 21 days.
+    /// </summary>
+    public async Task NotifyInactivityNudgeAsync(
+        Guid userAId,
+        Guid userBId,
+        Guid conversationId,
+        CancellationToken cancellationToken = default)
+    {
+        var payload = new
+        {
+            ConversationId = conversationId,
+            Message = "It's been a while. No pressure — your conversation is still here whenever you're ready.",
+            SentAt = DateTimeOffset.UtcNow
+        };
+
+        // Notify both participants independently via their personal user group
+        await _hubContext.Clients.Group($"user_{userAId}").SendAsync(
+            "InactivityNudge", payload, cancellationToken);
+
+        await _hubContext.Clients.Group($"user_{userBId}").SendAsync(
+            "InactivityNudge", payload, cancellationToken);
+    }
 }
