@@ -49,6 +49,12 @@ public static class DependencyInjection
         services.AddScoped<IMessagingService, MessagingService>();
         services.AddScoped<IModerationService, ModerationService>();
 
+        // Step 16: Background workers
+        // ConversationInactivityWorker: runs nightly at 00:05 UTC
+        //   - 21-day nudge (REQ-23) → NotifyInactivityNudgeAsync
+        //   - 30-day archive (REQ-23) → conv.Status = Archived
+        services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.ConversationInactivityWorker>();
+
         return services;
     }
 }
