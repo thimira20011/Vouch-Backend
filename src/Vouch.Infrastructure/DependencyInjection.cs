@@ -49,11 +49,11 @@ public static class DependencyInjection
         services.AddScoped<IMessagingService, MessagingService>();
         services.AddScoped<IModerationService, ModerationService>();
 
-        // Step 16: Background workers
-        // ConversationInactivityWorker: runs nightly at 00:05 UTC
-        //   - 21-day nudge (REQ-23) → NotifyInactivityNudgeAsync
-        //   - 30-day archive (REQ-23) → conv.Status = Archived
+        // Step 16 & 17: Background workers
+        // ConversationInactivityWorker: 00:05 UTC — nudge (21d) + archive (30d) inactive conversations
         services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.ConversationInactivityWorker>();
+        // AccountDeletionWorker: 01:05 UTC — hard-delete accounts with DeletionRequested > 30 days (NFR-6)
+        services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.AccountDeletionWorker>();
 
         return services;
     }
