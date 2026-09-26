@@ -35,6 +35,10 @@ public static class DependencyInjection
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
         services.AddSingleton<IEncryptionService, AesEncryptionService>();
 
+        // Step 18: Email service for high-severity report alerts (NFR-12)
+        // No-op when Smtp:Host is not configured (safe for local dev)
+        services.AddSingleton<IEmailService, SmtpEmailService>();
+
         // AI Wingman with HttpClient
         services.AddHttpClient<IAiWingmanService, AnthropicAiWingmanService>();
 

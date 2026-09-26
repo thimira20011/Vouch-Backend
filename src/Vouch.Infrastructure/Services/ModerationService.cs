@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Configuration;
 using Vouch.Application.Common.Interfaces;
 using Vouch.Application.Features.Moderation;
 using Vouch.Domain.Entities;
@@ -10,10 +11,14 @@ namespace Vouch.Infrastructure.Services;
 public class ModerationService : IModerationService
 {
     private readonly IApplicationDbContext _context;
+    private readonly IEmailService _emailService;
+    private readonly string? _architectEmail;
 
-    public ModerationService(IApplicationDbContext context)
+    public ModerationService(IApplicationDbContext context, IEmailService emailService, IConfiguration configuration)
     {
         _context = context;
+        _emailService = emailService;
+        _architectEmail = configuration["Smtp:ArchitectEmail"];
     }
 
     public async Task<ReportDto> SubmitReportAsync(Guid reporterId, CreateReportRequest request, CancellationToken ct = default)
@@ -50,6 +55,25 @@ public class ModerationService : IModerationService
         reportedUser.IsSoftHiddenFromMatchmaking = true;
 
         await _context.SaveChangesAsync(ct);
+
+        // NFR-12: High-severity reports (>= 4) trigger an immediate email alert to the Architect
+        if (severity >= 4 && !string.IsNullOrWhiteSpace(_architectEmail))
+        {
+            var subject = $"[Vouch Alert] High-Severity Report: {request.Category} (Severity {severity}/5)";
+            var body = string.Join(Environment.NewLine,
+                "A high-severity report has been submitted on Vouch.",
+                string.Empty,
+                $"Category  : {request.Category}",
+                $"Severity  : {severity}/5",
+                $"Reporter  : {reporter.Email} (ID: {reporter.Id})",
+                $"Reported  : {reportedUser.FullName} (ID: {reportedUser.Id})",
+                $"Details   : {request.Details}",
+                $"Submitted : {DateTimeOffset.UtcNow:u}",
+                string.Empty,
+                "Please review this report in the Architect dashboard.");
+            // Fire-and-forget — SmtpEmailService never throws; failure is only logged
+            await _emailService.SendAsync(_architectEmail, subject, body, ct);
+        }
 
         return new ReportDto(
             Id: report.Id,
