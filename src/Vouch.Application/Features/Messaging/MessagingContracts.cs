@@ -3,7 +3,11 @@ using Vouch.Domain.Enums;
 
 namespace Vouch.Application.Features.Messaging;
 
-public record SendMessageRequest(string Body);
+/// <summary>
+/// Step 19 — REQ-16: Type defaults to Text so existing clients need no changes.
+/// Only pass Type = System after Full100 reveal (enforced at service layer).
+/// </summary>
+public record SendMessageRequest(string Body, MessageType Type = MessageType.Text);
 
 public record MessageDto(
     Guid Id,
@@ -11,7 +15,8 @@ public record MessageDto(
     string SenderName,
     string Body,
     DateTimeOffset DeliveredAt,
-    bool QualifiesForReveal
+    bool QualifiesForReveal,
+    MessageType Type
 );
 
 public record ConversationDto(

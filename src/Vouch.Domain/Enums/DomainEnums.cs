@@ -53,6 +53,16 @@ public enum ConversationStatus
     Archived = 3
 }
 
+/// <summary>
+/// Step 19 — REQ-16: Before Full100 reveal, only Text messages are permitted.
+/// System messages are app-generated events (e.g. clarity stage notifications).
+/// </summary>
+public enum MessageType
+{
+    Text = 1,    // Regular user-written message
+    System = 2   // App-generated (reserved for future use)
+}
+
 public enum MatchStatus
 {
     Pending = 1,

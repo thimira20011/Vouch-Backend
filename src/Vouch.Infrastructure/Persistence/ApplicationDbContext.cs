@@ -139,6 +139,12 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             builder.HasKey(m => m.Id);
             builder.HasIndex(m => new { m.ConversationId, m.SentAt });
 
+            // Step 19: Body max length matches FluentValidation rule (2000 chars)
+            builder.Property(m => m.Body).HasMaxLength(2000).IsRequired();
+
+            // Step 19: MessageType stored as int column; entity default = Text (1)
+            builder.Property(m => m.Type).HasColumnName("Type");
+
             builder.HasOne(m => m.Conversation)
                 .WithMany(c => c.Messages)
                 .HasForeignKey(m => m.ConversationId)

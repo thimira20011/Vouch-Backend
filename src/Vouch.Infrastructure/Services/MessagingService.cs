@@ -42,6 +42,14 @@ public class MessagingService : IMessagingService
             throw new InvalidOperationException("This conversation has been archived due to extended inactivity.");
         }
 
+        // REQ-16 (Step 19): Before full identity reveal (Full100), only plain Text messages are permitted.
+        // System-type messages can only exist after both users have accepted full clarity.
+        if (request.Type == MessageType.System && conversation.CurrentClarityStage != RevealClarityStage.Full100)
+        {
+            throw new InvalidOperationException(
+                "System messages are only permitted after full identity reveal (100% clarity stage).");
+        }
+
         var recipientId = conversation.UserAId == senderId ? conversation.UserBId : conversation.UserAId;
 
         // REQ-19: Message quality signals - messages under 5 characters do not increment reveal counter
@@ -52,6 +60,7 @@ public class MessagingService : IMessagingService
             ConversationId = conversation.Id,
             SenderId = senderId,
             Body = request.Body,
+            Type = request.Type,  // Step 19: persist the message type
             QualifiesForRevealCounter = qualifiesForCounter,
             DeliveredAt = DateTimeOffset.UtcNow
         };
@@ -89,7 +98,8 @@ public class MessagingService : IMessagingService
             SenderName: sender.FullName,
             Body: message.Body,
             DeliveredAt: message.DeliveredAt,
-            QualifiesForReveal: message.QualifiesForRevealCounter
+            QualifiesForReveal: message.QualifiesForRevealCounter,
+            Type: message.Type
         );
     }
 
@@ -169,7 +179,8 @@ public class MessagingService : IMessagingService
                 m.Sender.FullName,
                 m.Body,
                 m.DeliveredAt,
-                m.QualifiesForRevealCounter
+                m.QualifiesForRevealCounter,
+                m.Type
             ))
             .ToListAsync(ct);
 
