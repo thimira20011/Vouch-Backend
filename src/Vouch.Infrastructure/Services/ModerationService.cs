@@ -209,13 +209,80 @@ public class ModerationService : IModerationService
             ))
             .ToListAsync(ct);
 
+        // Step 20 — Trust Score Anomaly Detection
+        // Signal 1: VelocitySpike — user received > 3.0 trust points in the last 48 hours (REQ-10)
+        var velocityAnomalyThreshold = TrustScoreCalculator.AnomalyScoreThreshold48Hours;
+        var fortyEightHoursAgo = DateTimeOffset.UtcNow.AddHours(-48);
+
+        var velocityAnomalies = await _context.Vouches
+            .AsNoTracking()
+            .Where(v => v.TargetUser.CampusId == campusId
+                     && v.CreatedAt >= fortyEightHoursAgo)
+            .GroupBy(v => new { v.TargetUserId, v.TargetUser.FullName, v.TargetUser.Email, v.TargetUser.TrustScore, v.TargetUser.ActiveVouchesReceivedCount })
+            .Where(g => g.Sum(v => v.FinalCalculatedWeight) > velocityAnomalyThreshold)
+            .Select(g => new TrustScoreAnomalyDto(
+                g.Key.TargetUserId,
+                g.Key.FullName,
+                g.Key.Email,
+                g.Key.TrustScore,
+                g.Key.ActiveVouchesReceivedCount,
+                "VelocitySpike",
+                $"Received {g.Sum(v => v.FinalCalculatedWeight):F2} trust points in 48 hours (threshold: {velocityAnomalyThreshold})",
+                DateTimeOffset.UtcNow))
+            .ToListAsync(ct);
+
+        // Signal 2: AtScoreCap — user reached the 20.0 maximum cap (REQ-7)
+        var scoreCap = TrustScoreCalculator.MaxTrustScoreCap;
+        var capAnomalies = await _context.Users
+            .AsNoTracking()
+            .Where(u => u.CampusId == campusId
+                     && u.TrustScore >= scoreCap
+                     && u.Status == AccountStatus.Active)
+            .Select(u => new TrustScoreAnomalyDto(
+                u.Id,
+                u.FullName,
+                u.Email,
+                u.TrustScore,
+                u.ActiveVouchesReceivedCount,
+                "AtScoreCap",
+                $"Trust score has reached the maximum cap of {scoreCap}. Verify legitimacy before accepting further vouches.",
+                DateTimeOffset.UtcNow))
+            .ToListAsync(ct);
+
+        // Signal 3: ScoreVouchMismatch — trust score > 15 with fewer than 5 vouches
+        // Mathematically impossible with standard weights (max 1.2 per vouch × 5 = 6.0)
+        // Indicates data corruption or injection attempt
+        var mismatchAnomalies = await _context.Users
+            .AsNoTracking()
+            .Where(u => u.CampusId == campusId
+                     && u.TrustScore > 15.0
+                     && u.ActiveVouchesReceivedCount < 5)
+            .Select(u => new TrustScoreAnomalyDto(
+                u.Id,
+                u.FullName,
+                u.Email,
+                u.TrustScore,
+                u.ActiveVouchesReceivedCount,
+                "ScoreVouchMismatch",
+                $"Trust score of {u.TrustScore:F2} is inconsistent with {u.ActiveVouchesReceivedCount} recorded vouch(es). Investigate for data integrity issues.",
+                DateTimeOffset.UtcNow))
+            .ToListAsync(ct);
+
+        // Merge and deduplicate: if a user appears in multiple signals, keep all entries
+        // (useful for the Architect to see all flags against one user)
+        var allAnomalies = velocityAnomalies
+            .Concat(capAnomalies)
+            .Concat(mismatchAnomalies)
+            .OrderByDescending(a => a.TrustScore)
+            .ToList();
+
         return new ArchitectDashboardDto(
             LaunchReadiness: readiness,
             TotalActiveUsers: totalActive,
             TotalInIncubationUsers: totalIncubation,
             PendingReportsCount: pendingReports.Count,
             CriticalReports: pendingReports.Where(r => r.SeverityScore >= 4).ToList(),
-            TrustScoreAnomalies: new List<string>()
+            TrustScoreAnomalies: allAnomalies
         );
     }
 

@@ -33,7 +33,21 @@ public record ArchitectDashboardDto(
     int TotalInIncubationUsers,
     int PendingReportsCount,
     IReadOnlyList<ReportDto> CriticalReports,
-    IReadOnlyList<string> TrustScoreAnomalies
+    IReadOnlyList<TrustScoreAnomalyDto> TrustScoreAnomalies
+);
+
+/// <summary>
+/// Step 20: A single trust score anomaly surfaced in the Architect dashboard.
+/// </summary>
+public record TrustScoreAnomalyDto(
+    Guid UserId,
+    string UserName,
+    string Email,
+    double TrustScore,
+    int VouchCount,
+    string AnomalyType,     // "VelocitySpike" | "AtScoreCap" | "ScoreVouchMismatch"
+    string Description,
+    DateTimeOffset DetectedAt
 );
 
 public record ResolveReportBody(bool Uphold, string? Notes);
