@@ -21,8 +21,8 @@ public record LoginRequest(
 public record CompleteOnboardingRequest(
     string Bio,
     List<string> DeepValues,
-    List<IntellectualInterest> IntellectualInterests,
-    string? PhotoBase64
+    List<IntellectualInterest> IntellectualInterests
+    // Step 21: Photo is uploaded separately via PUT /api/profile/photo (REQ-17)
 );
 
 public record AuthResponse(
@@ -41,5 +41,6 @@ public interface IAuthService
     Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default);
     Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default);
     Task CompleteOnboardingAsync(Guid userId, CompleteOnboardingRequest request, CancellationToken ct = default);
+    Task<(string OriginalUrl, string AbstractUrl)> UploadPhotoAsync(Guid userId, Stream stream, string contentType, CancellationToken ct = default); // Step 21 REQ-17
     Task RequestAccountDeletionAsync(Guid userId, CancellationToken ct = default); // NFR-6
 }

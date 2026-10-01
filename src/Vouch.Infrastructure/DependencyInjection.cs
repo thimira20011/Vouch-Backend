@@ -39,6 +39,10 @@ public static class DependencyInjection
         // No-op when Smtp:Host is not configured (safe for local dev)
         services.AddSingleton<IEmailService, SmtpEmailService>();
 
+        // Step 21: Photo storage service (REQ-17)
+        // Default: local disk under wwwroot/photos/. Override with cloud impl for production.
+        services.AddSingleton<IPhotoStorageService, LocalPhotoStorageService>();
+
         // AI Wingman with HttpClient
         services.AddHttpClient<IAiWingmanService, AnthropicAiWingmanService>();
 

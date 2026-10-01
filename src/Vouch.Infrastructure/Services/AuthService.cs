@@ -12,17 +12,20 @@ public class AuthService : IAuthService
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenService _jwtTokenService;
     private readonly IEncryptionService _encryption;
+    private readonly IPhotoStorageService _photoStorage;
 
     public AuthService(
         IApplicationDbContext context,
         IPasswordHasher passwordHasher,
         IJwtTokenService jwtTokenService,
-        IEncryptionService encryption)
+        IEncryptionService encryption,
+        IPhotoStorageService photoStorage)
     {
         _context = context;
         _passwordHasher = passwordHasher;
         _jwtTokenService = jwtTokenService;
         _encryption = encryption;
+        _photoStorage = photoStorage;
     }
 
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
@@ -150,15 +153,29 @@ public class AuthService : IAuthService
         }
         user.DeepValues = request.DeepValues;
         user.IntellectualInterests = request.IntellectualInterests;
-
-        if (!string.IsNullOrEmpty(request.PhotoBase64))
-        {
-            user.OriginalPhotoUrl = request.PhotoBase64;
-            // Generate abstract initial placeholder for Slow-Burn (REQ-17)
-            user.OilPaintingAbstractPhotoUrl = request.PhotoBase64; 
-        }
+        // Step 21: Photo uploaded via dedicated PUT /api/profile/photo endpoint (REQ-17)
 
         await _context.SaveChangesAsync(ct);
+    }
+
+    /// <summary>
+    /// Step 21 — REQ-17: Stores the user photo and creates the blurred abstract variant.
+    /// Returns the public URLs for both versions.
+    /// </summary>
+    public async Task<(string OriginalUrl, string AbstractUrl)> UploadPhotoAsync(
+        Guid userId, Stream stream, string contentType, CancellationToken ct = default)
+    {
+        var user = await _context.Users.FirstOrDefaultAsync(u => u.Id == userId, ct)
+            ?? throw new KeyNotFoundException("User not found.");
+
+        var (originalUrl, abstractUrl) = await _photoStorage.StorePhotoAsync(userId, stream, contentType, ct);
+
+        user.OriginalPhotoUrl = originalUrl;
+        user.OilPaintingAbstractPhotoUrl = abstractUrl;
+
+        await _context.SaveChangesAsync(ct);
+
+        return (originalUrl, abstractUrl);
     }
 
     public async Task RequestAccountDeletionAsync(Guid userId, CancellationToken ct = default)

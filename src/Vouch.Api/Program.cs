@@ -152,6 +152,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseCors("VouchCorsPolicy");
 app.UseRateLimiter(); // Must come before Authentication
+app.UseStaticFiles();  // Step 21: Serve /photos/* from wwwroot/photos/ (REQ-17)
 app.UseAuthentication();
 app.UseAuthorization();
 
@@ -162,6 +163,7 @@ app.MapMatchEndpoints();
 app.MapMessagingEndpoints();
 app.MapWingmanEndpoints();
 app.MapModerationEndpoints();
+app.MapProfileEndpoints(); // Step 21: PUT /api/profile/photo (REQ-17)
 
 // 7. Map SignalR Hub
 app.MapHub<VouchHub>("/hubs/vouch");
