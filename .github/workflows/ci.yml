@@ -27,5 +27,8 @@ jobs:
     - name: Run Unit Tests
       run: dotnet test tests/Vouch.UnitTests/Vouch.UnitTests.csproj --configuration Release --no-build --verbosity normal
 
+    - name: Test Photo Processing on Alpine
+      run: docker build --target photo-tests -t vouch-photo-tests:latest .
+
     - name: Build Docker Image
       run: docker build -t vouch-backend:latest .

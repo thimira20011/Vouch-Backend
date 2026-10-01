@@ -17,6 +17,12 @@ COPY . .
 WORKDIR "/src/src/Vouch.Api"
 RUN dotnet publish "Vouch.Api.csproj" -c Release -o /app/publish /p:UseAppHost=false
 
+# CI builds this target to exercise photo processing with the Alpine native library.
+FROM build AS photo-tests
+WORKDIR /src
+RUN dotnet test "tests/Vouch.UnitTests/Vouch.UnitTests.csproj" -c Release \
+    --filter "FullyQualifiedName~LocalPhotoStorageServiceTests" --verbosity minimal
+
 # Stage 2: Minimal Runtime (Green Coding / Alpine footprint)
 FROM mcr.microsoft.com/dotnet/aspnet:10.0-alpine AS final
 WORKDIR /app
