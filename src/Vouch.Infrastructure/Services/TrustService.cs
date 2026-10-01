@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Logging;
 using Vouch.Application.Common.Interfaces;
 using Vouch.Application.Features.Vouching;
 using Vouch.Domain.Entities;
@@ -11,11 +12,16 @@ public class TrustService : ITrustService
 {
     private readonly IApplicationDbContext _context;
     private readonly ISlowBurnNotificationService _notificationService;
+    private readonly ILogger<TrustService> _logger;
 
-    public TrustService(IApplicationDbContext context, ISlowBurnNotificationService notificationService)
+    public TrustService(
+        IApplicationDbContext context,
+        ISlowBurnNotificationService notificationService,
+        ILogger<TrustService> logger)
     {
         _context = context;
         _notificationService = notificationService;
+        _logger = logger;
     }
 
     public async Task<VouchDto> SubmitVouchAsync(
@@ -113,6 +119,8 @@ public class TrustService : ITrustService
 
         if (TrustScoreCalculator.IsAnomalyVelocity(recentWeightsSum))
         {
+            _logger.LogWarning("Trust anomaly detected. UserId={UserId} ScoreIncrease48h={ScoreIncrease:F2} OldScore={OldScore:F2} NewScore={NewScore:F2}",
+                target.Id, recentWeightsSum, oldScore, target.TrustScore);
             await _notificationService.NotifyTrustScoreAlertToArchitectAsync(target.Id, oldScore, target.TrustScore, ct);
         }
 

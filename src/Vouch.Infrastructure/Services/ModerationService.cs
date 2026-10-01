@@ -1,5 +1,6 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
+using Microsoft.Extensions.Logging;
 using Vouch.Application.Common.Interfaces;
 using Vouch.Application.Features.Moderation;
 using Vouch.Domain.Entities;
@@ -13,12 +14,18 @@ public class ModerationService : IModerationService
     private readonly IApplicationDbContext _context;
     private readonly IEmailService _emailService;
     private readonly string? _architectEmail;
+    private readonly ILogger<ModerationService> _logger;
 
-    public ModerationService(IApplicationDbContext context, IEmailService emailService, IConfiguration configuration)
+    public ModerationService(
+        IApplicationDbContext context,
+        IEmailService emailService,
+        IConfiguration configuration,
+        ILogger<ModerationService> logger)
     {
         _context = context;
         _emailService = emailService;
         _architectEmail = configuration["Smtp:ArchitectEmail"];
+        _logger = logger;
     }
 
     public async Task<ReportDto> SubmitReportAsync(Guid reporterId, CreateReportRequest request, CancellationToken ct = default)
@@ -55,6 +62,14 @@ public class ModerationService : IModerationService
         reportedUser.IsSoftHiddenFromMatchmaking = true;
 
         await _context.SaveChangesAsync(ct);
+
+        // Step 22: structured logging
+        if (severity >= 4)
+            _logger.LogWarning("High-severity report submitted. Category={Category} Severity={Severity} ReporterId={ReporterId} ReportedUserId={ReportedUserId}",
+                request.Category, severity, reporterId, request.ReportedUserId);
+        else
+            _logger.LogInformation("Report submitted. Category={Category} Severity={Severity} ReporterId={ReporterId} ReportedUserId={ReportedUserId}",
+                request.Category, severity, reporterId, request.ReportedUserId);
 
         // NFR-12: High-severity reports (>= 4) trigger an immediate email alert to the Architect
         if (severity >= 4 && !string.IsNullOrWhiteSpace(_architectEmail))

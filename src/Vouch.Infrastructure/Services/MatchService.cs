@@ -1,4 +1,6 @@
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
+using Microsoft.Extensions.Logging;
 using Vouch.Application.Common.Interfaces;
 using Vouch.Application.Features.Matching;
 using Vouch.Domain.Entities;
@@ -10,21 +12,30 @@ namespace Vouch.Infrastructure.Services;
 public class MatchService : IMatchService
 {
     private readonly IApplicationDbContext _context;
+    private readonly ILogger<MatchService> _logger;
+    private readonly IMemoryCache _cache;
 
-    public MatchService(IApplicationDbContext context)
+    public MatchService(IApplicationDbContext context, ILogger<MatchService> logger, IMemoryCache cache)
     {
         _context = context;
+        _logger = logger;
+        _cache = cache;
     }
 
     public async Task<TodayConnectionResponse> GetTodayConnectionAsync(Guid userId, CancellationToken ct = default)
     {
+        // Step 24: Cache today's connection per user, invalidated at midnight or on RespondToMatchAsync
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        var cacheKey = $"match:{userId}:{today:yyyy-MM-dd}";
+
+        if (_cache.TryGetValue(cacheKey, out TodayConnectionResponse? cached) && cached is not null)
+            return cached;
+
         var user = await _context.Users
             .AsNoTracking()
             .Include(u => u.Campus)
             .FirstOrDefaultAsync(u => u.Id == userId, ct)
             ?? throw new KeyNotFoundException("User not found.");
-
-        var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         // 1. Check if user already has a match for today
         var existingMatch = await _context.Matches
@@ -54,7 +65,13 @@ public class MatchService : IMatchService
                 Status: existingMatch.Status
             );
 
-            return new TodayConnectionResponse(HasMatch: true, Match: matchDto, Reflection: null);
+            var matchResult = new TodayConnectionResponse(HasMatch: true, Match: matchDto, Reflection: null);
+
+            // Step 24: Cache until midnight so repeated GETs don't re-query the DB
+            var midnightForMatch = DateTimeOffset.UtcNow.Date.AddDays(1);
+            _cache.Set(cacheKey, matchResult, midnightForMatch - DateTimeOffset.UtcNow);
+
+            return matchResult;
         }
 
         // 2. If no match exists today, fetch Daily Reflection (REQ-12)
@@ -78,7 +95,14 @@ public class MatchService : IMatchService
                 ThoughtProvokingQuestion: "What contemplation brought you peace today?",
                 InterestCategory: "Philosophy");
 
-        return new TodayConnectionResponse(HasMatch: false, Match: null, Reflection: reflectionDto);
+        var result = new TodayConnectionResponse(HasMatch: false, Match: null, Reflection: reflectionDto);
+
+        // Cache result until midnight UTC (when the daily cycle resets)
+        var midnight = DateTimeOffset.UtcNow.Date.AddDays(1);
+        var expiry = midnight - DateTimeOffset.UtcNow;
+        _cache.Set(cacheKey, result, expiry);
+
+        return result;
     }
 
     public async Task<bool> RespondToMatchAsync(Guid userId, Guid matchId, bool accept, CancellationToken ct = default)
@@ -95,6 +119,11 @@ public class MatchService : IMatchService
         {
             match.Status = MatchStatus.Rejected;
             await _context.SaveChangesAsync(ct);
+            _logger.LogInformation("Match rejected. MatchId={MatchId} UserId={UserId}", matchId, userId);
+
+            // Step 24: Invalidate cache for both participants
+            InvalidateMatchCache(match.UserAId);
+            InvalidateMatchCache(match.UserBId);
             return false;
         }
 
@@ -119,7 +148,22 @@ public class MatchService : IMatchService
         }
 
         await _context.SaveChangesAsync(ct);
+        if (match.UserAAccepted && match.UserBAccepted)
+            _logger.LogInformation("Match accepted — conversation started. MatchId={MatchId} ConversationId={ConversationId}",
+                matchId, match.ResultingConversationId);
+
+        // Step 24: Invalidate cache for both participants so next GET is fresh
+        InvalidateMatchCache(match.UserAId);
+        InvalidateMatchCache(match.UserBId);
+
         return true;
+    }
+
+    /// <summary>Step 24: Removes the today-connection cache entry for a specific user.</summary>
+    private void InvalidateMatchCache(Guid userId)
+    {
+        var today = DateOnly.FromDateTime(DateTime.UtcNow);
+        _cache.Remove($"match:{userId}:{today:yyyy-MM-dd}");
     }
 
     public async Task GenerateDailyMatchesForCampusAsync(Guid campusId, CancellationToken ct = default)

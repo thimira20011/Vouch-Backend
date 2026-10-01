@@ -30,6 +30,9 @@ public static class DependencyInjection
         services.AddHealthChecks()
             .AddNpgSql(connectionString, name: "postgres", tags: ["db", "postgres"]);
 
+        // Step 24: In-memory cache for today's match result (expires at midnight, invalidated on respond)
+        services.AddMemoryCache();
+
         // Security & Crypto
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenService, JwtTokenService>();
@@ -62,6 +65,8 @@ public static class DependencyInjection
         services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.ConversationInactivityWorker>();
         // AccountDeletionWorker: 01:05 UTC — hard-delete accounts with DeletionRequested > 30 days (NFR-6)
         services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.AccountDeletionWorker>();
+        // Step 23: DailyMatchGenerationWorker: 00:05 UTC — generate matches for all active campuses
+        services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.DailyMatchGenerationWorker>();
 
         return services;
     }

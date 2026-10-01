@@ -3,6 +3,7 @@ using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
+using Serilog;
 using Vouch.Api.Endpoints;
 using Vouch.Application.Common.Interfaces;
 using Vouch.Application.Features.Auth;
@@ -10,7 +11,26 @@ using Vouch.Infrastructure;
 using Vouch.Infrastructure.Persistence;
 using Vouch.Infrastructure.SignalR;
 
+// Step 22: Configure Serilog from appsettings ("Serilog" section)
+// Console sink: always active. File sink: optional, configurable per environment.
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(new ConfigurationBuilder()
+        .AddJsonFile("appsettings.json", optional: false)
+        .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true)
+        .AddJsonFile("appsettings.Local.json", optional: true)
+        .AddEnvironmentVariables()
+        .Build())
+    .Enrich.FromLogContext()
+    .Enrich.WithProperty("Application", "Vouch")
+    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
+    .WriteTo.File("logs/vouch-.log",
+        rollingInterval: RollingInterval.Day,
+        retainedFileCountLimit: 14,
+        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
+    .CreateLogger();
+
 var builder = WebApplication.CreateBuilder(args);
+builder.Host.UseSerilog(); // Replace default Microsoft logging with Serilog
 
 // Load local dev overrides (gitignored — contains real dev secrets)
 builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
@@ -150,6 +170,7 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
+app.UseSerilogRequestLogging(); // Step 22: Structured HTTP request logging
 app.UseCors("VouchCorsPolicy");
 app.UseRateLimiter(); // Must come before Authentication
 app.UseStaticFiles();  // Step 21: Serve /photos/* from wwwroot/photos/ (REQ-17)
