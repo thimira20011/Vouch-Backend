@@ -11,12 +11,8 @@ public class AesEncryptionService : IEncryptionService
 
     public AesEncryptionService(IConfiguration configuration)
     {
-        var keyString = configuration["Security:EncryptionKey"]
-            ?? throw new InvalidOperationException(
-                "Security:EncryptionKey is not configured. Set it via environment variable or user secrets.");
-
-        if (keyString.Length < 16)
-            throw new InvalidOperationException("Security:EncryptionKey must be at least 16 characters.");
+        // Keep the existing derivation/minimum for compatibility; key migration is Step 4.
+        var keyString = RequiredConfiguration.Secret(configuration, "Security:EncryptionKey", 16);
 
         _key = SHA256.HashData(Encoding.UTF8.GetBytes(keyString)); // Always 256 bits via SHA-256
     }

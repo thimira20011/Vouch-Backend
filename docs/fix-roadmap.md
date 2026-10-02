@@ -13,8 +13,8 @@ This roadmap covers the defects identified in the review and the remaining SRS w
 | Step | Deliverable | Status |
 |---|---|---|
 | 1 | Restore Release builds and verify photo processing | Local checks passed; Alpine execution pending |
-| 2 | Secure configuration and repeatable local setup | Pending |
-| 3 | PostgreSQL/API integration-test harness | Pending |
+| 2 | Secure configuration and repeatable local setup | Implemented; local checks passed |
+| 3 | PostgreSQL/API integration-test harness | Implemented; local PostgreSQL checks passed; CI pending |
 | 4 | Working encrypted-email lookup and readable DTOs | Pending |
 | 5 | Safe database migrations, backfill and admin bootstrap | Pending |
 | 6 | Secure ambassador invite redemption | Pending |
@@ -247,3 +247,20 @@ Verification:
 - Photo-storage access controls and encryption/login defects remain open in their later steps; Step 1 does not certify production readiness.
 
 Upstream sources: [package and license](https://www.nuget.org/packages/Magick.NET-Q8-AnyCPU/14.17.2), [platform support](https://github.com/dlemstra/Magick.NET). License notices are retained in `third-party-notices/Magick.NET.txt` and copied to published output.
+
+## Steps 2–3 change record — 2 October 2026
+
+Step 2 now validates required connection/JWT/encryption settings at startup, removes fallback secrets and the fixed privileged seed account, and keeps local Development settings below deployment overrides. The local secret file is excluded from publish output. Compose requires supplied secrets and injects documented settings; setup instructions now distinguish key=value `.env` from local JSON. Strict auth limits are partitioned by client IP and standard limits by authenticated user, with immediate JSON 429 and Retry-After. Forwarded headers require explicitly configured trusted proxy addresses.
+
+Step 3 adds the real API/PostgreSQL harness, safe generated-database reset/cleanup, first-to-current migration checks, and isolated test settings with workers/SMTP/AI/photo writes disabled. Both a disposable Compose server and a temporary Windows PostgreSQL runner are documented. The integration project is included in the solution, CI and Docker restore inputs.
+
+Verification:
+
+- Release unit tests: 40 passed, zero failed/skipped.
+- Release integration tests on a fresh temporary PostgreSQL 17.11 server: 15 passed, zero failed, one explicitly skipped.
+- Verified registration → onboarding → daily response, encrypted email persistence, JSON persistence, database health, no default Architect, invalid login, actual signed JWT 401/403, per-caller rate limits and trusted/untrusted forwarded-header behavior.
+- The successful-login test remains skipped for the known encrypted-email lookup defect; Step 4 must implement it and enable that test.
+- Release solution build: passed, zero warnings/errors. Release API publish: passed; local secret configuration excluded from output.
+- Docker/Alpine/CI execution remains pending until GitHub runs the workflow.
+
+No existing application database was accessed or migrated. The runner initializes its own temporary cluster, creates and drops only its generated test database, and stops its server. Production migration/admin provisioning remains Step 5; no automatic credential rotation or live data backfill was performed.

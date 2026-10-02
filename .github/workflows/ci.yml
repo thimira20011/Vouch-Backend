@@ -27,6 +27,24 @@ jobs:
     - name: Run Unit Tests
       run: dotnet test tests/Vouch.UnitTests/Vouch.UnitTests.csproj --configuration Release --no-build --verbosity normal
 
+    - name: Configure isolated PostgreSQL tests
+      shell: bash
+      run: |
+        test_password=$(openssl rand -hex 24)
+        echo "::add-mask::$test_password"
+        echo "VOUCH_TEST_POSTGRES_PASSWORD=$test_password" >> "$GITHUB_ENV"
+        echo "VOUCH_TEST_POSTGRES_ADMIN=Host=127.0.0.1;Port=55432;Database=vouch_test_admin;Username=vouch_test_runner;Password=$test_password" >> "$GITHUB_ENV"
+
+    - name: Start isolated PostgreSQL
+      run: docker compose -p vouch-ci-tests -f docker-compose.test.yml up -d --wait
+
+    - name: Run API and PostgreSQL Integration Tests
+      run: dotnet test tests/Vouch.IntegrationTests/Vouch.IntegrationTests.csproj --configuration Release --no-build --verbosity normal
+
+    - name: Stop isolated PostgreSQL
+      if: always()
+      run: docker compose -p vouch-ci-tests -f docker-compose.test.yml down
+
     - name: Test Photo Processing on Alpine
       run: docker build --target photo-tests -t vouch-photo-tests:latest .
 

@@ -17,9 +17,10 @@ public static class DependencyInjection
 {
     public static IServiceCollection AddInfrastructure(this IServiceCollection services, IConfiguration configuration)
     {
-        var connectionString = configuration.GetConnectionString("DefaultConnection")
-            ?? throw new InvalidOperationException(
-                "ConnectionStrings:DefaultConnection is not configured. Set it via environment variable or user secrets.");
+        var connectionString = RequiredConfiguration.Read(configuration, "ConnectionStrings:DefaultConnection");
+        _ = JwtSettings.Read(configuration);
+        // Validate encryption at registration time, not on the first user request.
+        services.AddSingleton<IEncryptionService>(new AesEncryptionService(configuration));
 
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(connectionString));
@@ -35,8 +36,7 @@ public static class DependencyInjection
 
         // Security & Crypto
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
-        services.AddSingleton<IJwtTokenService, JwtTokenService>();
-        services.AddSingleton<IEncryptionService, AesEncryptionService>();
+        services.AddSingleton<IJwtTokenService>(new JwtTokenService(configuration));
 
         // Step 18: Email service for high-severity report alerts (NFR-12)
         // No-op when Smtp:Host is not configured (safe for local dev)
@@ -62,11 +62,14 @@ public static class DependencyInjection
 
         // Step 16 & 17: Background workers
         // ConversationInactivityWorker: 00:05 UTC — nudge (21d) + archive (30d) inactive conversations
-        services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.ConversationInactivityWorker>();
-        // AccountDeletionWorker: 01:05 UTC — hard-delete accounts with DeletionRequested > 30 days (NFR-6)
-        services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.AccountDeletionWorker>();
-        // Step 23: DailyMatchGenerationWorker: 00:05 UTC — generate matches for all active campuses
-        services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.DailyMatchGenerationWorker>();
+        if (configuration.GetValue("BackgroundJobs:Enabled", true))
+        {
+            services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.ConversationInactivityWorker>();
+            // AccountDeletionWorker: 01:05 UTC — hard-delete accounts with DeletionRequested > 30 days (NFR-6)
+            services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.AccountDeletionWorker>();
+            // Step 23: DailyMatchGenerationWorker: 00:05 UTC — generate matches for all active campuses
+            services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.DailyMatchGenerationWorker>();
+        }
 
         return services;
     }

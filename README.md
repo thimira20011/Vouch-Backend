@@ -109,6 +109,8 @@ Vouch-Backend/
 
 ## 3. SRS v2.0.0 Business Rules Implementation Matrix
 
+This table identifies implementation locations; it does not certify requirement completion. See the [review](docs/project-review-and-completion-plan.md) and [fix roadmap](docs/fix-roadmap.md) for verified gaps and progress.
+
 | Requirement | Description | Implementation Location |
 |---|---|---|
 | **REQ-A1 to A6** | **Ambassador Bootstrap & Soft Launch Gate**: Campus locked until 30 active ambassadors each vouch for >=2 users. Launch Readiness Score. | [`LaunchReadinessCalculator.cs`](file:///C:/Users/THIMIRA/Vouch-Backend/src/Vouch.Domain/Services/LaunchReadinessCalculator.cs), [`Campus.cs`](file:///C:/Users/THIMIRA/Vouch-Backend/src/Vouch.Domain/Entities/Campus.cs) |
@@ -127,25 +129,69 @@ Vouch-Backend/
 
 ### Prerequisites
 - [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- [Docker & Docker Compose](https://www.docker.com/) (Optional for local PostgreSQL)
+- PostgreSQL 17 or later, or [Docker & Docker Compose](https://www.docker.com/).
+- PowerShell 7 for the commands below.
 
 ### Running with Docker Compose
-```bash
-docker-compose up -d
+
+Copy `.env.example` to `.env` and fill in `POSTGRES_PASSWORD`, `Jwt__Key` and `Security__EncryptionKey` with three independent strong secrets. In PowerShell 7, generate each value with:
+
+```powershell
+[Convert]::ToHexString([Security.Cryptography.RandomNumberGenerator]::GetBytes(32))
 ```
-This spins up PostgreSQL 17 and the Vouch API on `http://localhost:5000`.
+
+Then start the local stack:
+
+```powershell
+Copy-Item .env.example .env # Only when creating your initial configuration.
+# Edit .env and supply the required secrets before continuing.
+docker compose up -d --build --wait
+```
+
+This starts PostgreSQL on localhost:5432 and the API at `http://localhost:5000`. Compose sets the container connection string from the PostgreSQL settings. Reference data is seeded for this local Development setup. Database and photo volumes persist across restarts; changing `.env` does not change credentials in an already initialized database volume.
 
 ### Running Locally with .NET CLI
-```bash
-# 1. Restore dependencies
-dotnet restore Vouch.slnx
 
-# 2. Run unit tests
-dotnet test
+Create `src/Vouch.Api/appsettings.Local.json` as valid JSON, filling in your actual local database connection and independently generated secrets:
 
-# 3. Start the API
-dotnet run --project src/Vouch.Api/Vouch.Api.csproj
+```json
+{
+  "ConnectionStrings": {
+    "DefaultConnection": "Host=127.0.0.1;Port=5432;Database=vouch_db;Username=vouch;Password=YOUR_DATABASE_PASSWORD"
+  },
+  "Jwt": {
+    "Key": "CHANGE_ME_WITH_AN_INDEPENDENT_RANDOM_SECRET_AT_LEAST_32_CHARACTERS",
+    "Issuer": "VouchBackend",
+    "Audience": "VouchFrontend"
+  },
+  "Security": {
+    "EncryptionKey": "CHANGE_ME_WITH_ANOTHER_INDEPENDENT_RANDOM_SECRET"
+  },
+  "Database": { "SeedOnStartup": true }
+}
 ```
 
-The API will start and automatically seed initial data (campuses, admin "The Architect", reflection prompts, and fallback icebreakers) into the database.
-Open `http://localhost:5000/openapi/v1.json` or query `http://localhost:5000/` for service health.
+The local file is ignored by Git and excluded from build/publish output. It loads only in Development, after base settings and before user secrets, environment variables and command-line arguments. Blank required connection/JWT/encryption settings and placeholder secret values prevent startup. `.env` is Compose syntax; `dotnet run` does not load it.
+
+```powershell
+dotnet restore Vouch.slnx
+dotnet test tests/Vouch.UnitTests/Vouch.UnitTests.csproj --configuration Release
+$env:ASPNETCORE_ENVIRONMENT = 'Development'
+dotnet run --project src/Vouch.Api/Vouch.Api.csproj --no-launch-profile --urls http://localhost:5000
+```
+
+Check `http://localhost:5000/healthz` for database readiness and `/openapi/v1.json` for the Development API specification. Startup seeds campuses, reflections and icebreakers, with **no fixed admin account**. Secure admin provisioning and replacing the existing EnsureCreated setup with migration-based installation are tracked in Step 5. For upgrades, follow that work before using an existing database.
+
+### Configuration and deployment boundaries
+
+`.env.example` documents CORS browser origins, optional SMTP/Anthropic configuration and photo settings. Empty SMTP host disables delivery; configure all SMTP fields before testing alerts. Empty Anthropic key uses curated fallback prompts. Local photo storage defaults to `wwwroot/photos`; Compose mounts a persistent photo volume. Photo access controls remain Step 13 work.
+
+For deployment, provide secrets through the environment or a secret manager, set the Production environment and `Database__SeedOnStartup=false`, and supply real HTTPS browser origins. The current setup is not production acceptance; the roadmap records remaining work. If fixed credentials from earlier versions were deployed, rotate them explicitly with an appropriate data/key migration; these changes do not rotate existing credentials or encryption keys.
+
+Auth limits are per client IP (5 requests/minute on strict routes) or per authenticated user (20/minute on standard routes). Requests exceeding the limit receive JSON 429 and Retry-After. When running behind a proxy, configure only its actual IP through `ReverseProxy:KnownProxies` (for example `ReverseProxy__KnownProxies__0` in the API environment or a Compose override). The proxy must overwrite forwarded headers. Arbitrary raw forwarded headers do not identify callers. Do not enable blanket forwarded-header trust.
+
+### API and PostgreSQL tests
+
+The full solution test suite requires a separate disposable PostgreSQL server. Follow the [integration test instructions](tests/Vouch.IntegrationTests/README.md) for Docker or the temporary Windows server runner. It creates and removes only its own generated test database, with outbound email/AI and business workers disabled. CI runs the same harness against PostgreSQL 17.
+
+One successful-login test is explicitly pending: randomized encrypted emails cannot currently be found during login. Step 4 repairs that defect; registration, onboarding, database health, migrations, rate limiting and signed JWT authorization are exercised now.

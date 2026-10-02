@@ -1,39 +1,29 @@
 using System.Text;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.IdentityModel.Tokens;
 using Serilog;
 using Vouch.Api.Endpoints;
+using Vouch.Api.Configuration;
 using Vouch.Application.Common.Interfaces;
 using Vouch.Application.Features.Auth;
 using Vouch.Infrastructure;
 using Vouch.Infrastructure.Persistence;
 using Vouch.Infrastructure.SignalR;
+using Vouch.Infrastructure.Security;
 
 // Step 22: Configure Serilog from appsettings ("Serilog" section)
 // Console sink: always active. File sink: optional, configurable per environment.
-Log.Logger = new LoggerConfiguration()
-    .ReadFrom.Configuration(new ConfigurationBuilder()
-        .AddJsonFile("appsettings.json", optional: false)
-        .AddJsonFile($"appsettings.{Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") ?? "Production"}.json", optional: true)
-        .AddJsonFile("appsettings.Local.json", optional: true)
-        .AddEnvironmentVariables()
-        .Build())
-    .Enrich.FromLogContext()
-    .Enrich.WithProperty("Application", "Vouch")
-    .WriteTo.Console(outputTemplate: "[{Timestamp:HH:mm:ss} {Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
-    .WriteTo.File("logs/vouch-.log",
-        rollingInterval: RollingInterval.Day,
-        retainedFileCountLimit: 14,
-        outputTemplate: "{Timestamp:yyyy-MM-dd HH:mm:ss.fff zzz} [{Level:u3}] {Message:lj} {Properties:j}{NewLine}{Exception}")
-    .CreateLogger();
-
 var builder = WebApplication.CreateBuilder(args);
-builder.Host.UseSerilog(); // Replace default Microsoft logging with Serilog
-
-// Load local dev overrides (gitignored — contains real dev secrets)
-builder.Configuration.AddJsonFile("appsettings.Local.json", optional: true, reloadOnChange: true);
+StartupConfiguration.AddLocalDevelopmentSettings(builder.Configuration, builder.Environment);
+builder.Host.UseSerilog((context, services, logger) =>
+{
+    logger.ReadFrom.Configuration(context.Configuration).Enrich.FromLogContext()
+        .Enrich.WithProperty("Application", "Vouch").WriteTo.Console();
+    if (context.Configuration.GetValue("Logging:File:Enabled", true))
+        logger.WriteTo.File("logs/vouch-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14);
+});
+var useTrustedProxies = StartupConfiguration.AddTrustedProxySupport(builder.Services, builder.Configuration);
 
 // 1. Add Infrastructure Services (EF Core PostgreSQL, SignalR, Security, Domain Services)
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -41,15 +31,7 @@ builder.Services.AddInfrastructure(builder.Configuration);
 // 2. Configure JWT Authentication & Authorization
 // SECURITY: These values MUST be set via environment variables or secrets manager.
 // The app will refuse to start if any are missing — never use fallback defaults for secrets.
-var jwtSecret = builder.Configuration["Jwt:Key"]
-    ?? throw new InvalidOperationException("Jwt:Key is not configured. Set it via environment variable or user secrets.");
-var jwtIssuer = builder.Configuration["Jwt:Issuer"]
-    ?? throw new InvalidOperationException("Jwt:Issuer is not configured.");
-var jwtAudience = builder.Configuration["Jwt:Audience"]
-    ?? throw new InvalidOperationException("Jwt:Audience is not configured.");
-
-if (jwtSecret.Length < 32)
-    throw new InvalidOperationException("Jwt:Key must be at least 32 characters long for HMAC-SHA256.");
+var jwtSettings = JwtSettings.Read(builder.Configuration);
 
 builder.Services.AddAuthentication(options =>
 {
@@ -64,9 +46,9 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
-        ValidIssuer = jwtIssuer,
-        ValidAudience = jwtAudience,
-        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSecret))
+        ValidIssuer = jwtSettings.Issuer,
+        ValidAudience = jwtSettings.Audience,
+        IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key))
     };
 
     // Support SignalR authentication via query string access_token
@@ -94,6 +76,9 @@ builder.Services.AddAuthorization(options =>
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>();
 if (allowedOrigins is null || allowedOrigins.Length == 0)
     throw new InvalidOperationException("Cors:AllowedOrigins is not configured. Add at least one origin to appsettings.json.");
+if (allowedOrigins.Any(origin => !Uri.TryCreate(origin, UriKind.Absolute, out var uri) ||
+    uri.Scheme is not ("http" or "https") || origin.TrimEnd('/') != uri.GetLeftPart(UriPartial.Authority)))
+    throw new InvalidOperationException("Cors:AllowedOrigins must contain explicit HTTP(S) origins without paths.");
 
 builder.Services.AddCors(options =>
 {
@@ -113,46 +98,18 @@ builder.Services.AddOpenApi();
 builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>();
 
 // 4. Rate Limiting — brute-force protection on auth endpoints (Step 7)
-builder.Services.AddRateLimiter(options =>
-{
-    // Strict: register + login — 5 attempts per minute, queue up to 2
-    options.AddFixedWindowLimiter("auth_strict", o =>
-    {
-        o.PermitLimit = 5;
-        o.Window = TimeSpan.FromMinutes(1);
-        o.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
-        o.QueueLimit = 2;
-    });
-
-    // Standard: onboarding + delete-account — 20 per minute
-    options.AddFixedWindowLimiter("auth_standard", o =>
-    {
-        o.PermitLimit = 20;
-        o.Window = TimeSpan.FromMinutes(1);
-        o.QueueProcessingOrder = System.Threading.RateLimiting.QueueProcessingOrder.OldestFirst;
-        o.QueueLimit = 5;
-    });
-
-    // Return 429 Too Many Requests with a Retry-After header
-    options.RejectionStatusCode = StatusCodes.Status429TooManyRequests;
-    options.OnRejected = async (context, ct) =>
-    {
-        context.HttpContext.Response.Headers.RetryAfter = "60";
-        await context.HttpContext.Response.WriteAsync(
-            "{\"error\":\"Too many requests. Please wait before trying again.\"}", ct);
-    };
-});
+StartupConfiguration.AddAuthRateLimiting(builder.Services);
 
 var app = builder.Build();
 
 // 4. Seed Database
-using (var scope = app.Services.CreateScope())
+if (builder.Configuration.GetValue("Database:SeedOnStartup", app.Environment.IsDevelopment()))
 {
+    using var scope = app.Services.CreateScope();
     try
     {
         var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        var hasher = scope.ServiceProvider.GetRequiredService<IPasswordHasher>();
-        await DbInitializer.SeedAsync(db, hasher);
+        await DbInitializer.SeedAsync(db);
     }
     catch (Exception ex)
     {
@@ -163,6 +120,7 @@ using (var scope = app.Services.CreateScope())
 // 5. Configure HTTP Pipeline
 // Exception handler MUST be first so it wraps the entire pipeline (Step 10)
 app.UseMiddleware<Vouch.Api.Middleware.GlobalExceptionHandlerMiddleware>();
+if (useTrustedProxies) app.UseForwardedHeaders();
 
 if (app.Environment.IsDevelopment())
 {
@@ -172,9 +130,9 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseSerilogRequestLogging(); // Step 22: Structured HTTP request logging
 app.UseCors("VouchCorsPolicy");
-app.UseRateLimiter(); // Must come before Authentication
 app.UseStaticFiles();  // Step 21: Serve /photos/* from wwwroot/photos/ (REQ-17)
 app.UseAuthentication();
+app.UseRateLimiter(); // Authenticated policies partition by user; public auth routes partition by client IP.
 app.UseAuthorization();
 
 // 6. Map API Endpoints
@@ -201,3 +159,5 @@ app.MapGet("/", () => Results.Ok(new
 }));
 
 app.Run();
+
+public partial class Program { }

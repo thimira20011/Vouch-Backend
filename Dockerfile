@@ -9,6 +9,7 @@ COPY ["src/Vouch.Application/Vouch.Application.csproj", "src/Vouch.Application/"
 COPY ["src/Vouch.Infrastructure/Vouch.Infrastructure.csproj", "src/Vouch.Infrastructure/"]
 COPY ["src/Vouch.Api/Vouch.Api.csproj", "src/Vouch.Api/"]
 COPY ["tests/Vouch.UnitTests/Vouch.UnitTests.csproj", "tests/Vouch.UnitTests/"]
+COPY ["tests/Vouch.IntegrationTests/Vouch.IntegrationTests.csproj", "tests/Vouch.IntegrationTests/"]
 
 RUN dotnet restore "src/Vouch.Api/Vouch.Api.csproj"
 

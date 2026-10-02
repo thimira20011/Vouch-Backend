@@ -10,19 +10,15 @@ namespace Vouch.Infrastructure.Security;
 
 public class JwtTokenService : IJwtTokenService
 {
-    private readonly IConfiguration _configuration;
+    private readonly JwtSettings _settings;
 
     public JwtTokenService(IConfiguration configuration)
     {
-        _configuration = configuration;
+        _settings = JwtSettings.Read(configuration);
     }
 
     public string GenerateToken(User user)
     {
-        var secretKey = _configuration["Jwt:Key"] ?? "VouchSuperSecretJwtSigningKeyMustBeVeryLongAndSecure2026!";
-        var issuer = _configuration["Jwt:Issuer"] ?? "VouchServer";
-        var audience = _configuration["Jwt:Audience"] ?? "VouchClient";
-
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
@@ -34,12 +30,12 @@ public class JwtTokenService : IJwtTokenService
             new("founding_member", user.HasFoundingMemberBadge.ToString().ToLowerInvariant())
         };
 
-        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(secretKey));
+        var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.Key));
         var creds = new SigningCredentials(key, SecurityAlgorithms.HmacSha256);
 
         var token = new JwtSecurityToken(
-            issuer: issuer,
-            audience: audience,
+            issuer: _settings.Issuer,
+            audience: _settings.Audience,
             claims: claims,
             expires: DateTime.UtcNow.AddDays(7),
             signingCredentials: creds

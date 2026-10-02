@@ -8,7 +8,7 @@ namespace Vouch.Infrastructure.Persistence;
 
 public static class DbInitializer
 {
-    public static async Task SeedAsync(ApplicationDbContext context, IPasswordHasher passwordHasher)
+    public static async Task SeedAsync(ApplicationDbContext context)
     {
         await context.Database.EnsureCreatedAsync();
 
@@ -55,29 +55,8 @@ public static class DbInitializer
             await context.SaveChangesAsync();
         }
 
-        // 2. Seed The Architect (Admin)
-        var suslCampus = await context.Campuses.FirstAsync(c => c.Code == "SUSL");
-        if (!await context.Users.AnyAsync(u => u.Role == UserRole.Architect))
-        {
-            var architect = new User
-            {
-                CampusId = suslCampus.Id,
-                Email = "architect@vouch.ac.lk",
-                PasswordHash = passwordHasher.HashPassword("ArchitectVouchPass2026!"),
-                FullName = "The Architect",
-                Role = UserRole.Architect,
-                Status = AccountStatus.Active,
-                Faculty = "Administration",
-                Department = "Trust Systems",
-                AcademicYear = 4,
-                Bio = "Platform Overseer & Trust Integrity Monitor.",
-                HasFoundingMemberBadge = true,
-                TrustScore = 20.0
-            };
-
-            await context.Users.AddAsync(architect);
-            await context.SaveChangesAsync();
-        }
+        // No privileged accounts are created with source-controlled credentials.
+        // Explicit encrypted admin provisioning is implemented with the Step 5 migration/bootstrap work.
 
         // 3. Seed Daily Reflections
         if (!await context.Reflections.AnyAsync())

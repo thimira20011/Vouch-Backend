@@ -12,3 +12,4 @@
 **/appsettings.Production.json
 **/logs
 **/wwwroot/photos
+.test-runtime

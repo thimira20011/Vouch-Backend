@@ -1,0 +1,17 @@
+# Dedicated disposable server for integration tests. Never points at postgres_data.
+services:
+  test-postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: vouch_test_admin
+      POSTGRES_USER: vouch_test_runner
+      POSTGRES_PASSWORD: ${VOUCH_TEST_POSTGRES_PASSWORD:?Set a test-only PostgreSQL password}
+    ports:
+      - "127.0.0.1:55432:5432"
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U vouch_test_runner -d vouch_test_admin"]
+      interval: 2s
+      timeout: 5s
+      retries: 30
