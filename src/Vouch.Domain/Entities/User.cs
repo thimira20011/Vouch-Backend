@@ -8,6 +8,7 @@ public class User : BaseEntity
     public Campus Campus { get; set; } = null!;
 
     public required string Email { get; set; }
+    public string EmailLookupHash { get; set; } = string.Empty;
     public required string PasswordHash { get; set; }
     public required string FullName { get; set; }
 

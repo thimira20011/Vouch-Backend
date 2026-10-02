@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.ChangeTracking;
+using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Vouch.Application.Common.Interfaces;
 using Vouch.Domain.Entities;
 using Vouch.Domain.Enums;
@@ -9,9 +11,49 @@ namespace Vouch.Infrastructure.Persistence;
 
 public class ApplicationDbContext : DbContext, IApplicationDbContext
 {
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options)
+    internal IEncryptionService Encryption { get; }
+    private readonly IEmailLookup _emailLookup;
+
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IEncryptionService encryption, IEmailLookup emailLookup)
         : base(options)
     {
+        Encryption = encryption;
+        _emailLookup = emailLookup;
+    }
+
+    protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
+        => optionsBuilder.ReplaceService<IModelCacheKeyFactory, ProtectedModelCacheKeyFactory>();
+
+    public override int SaveChanges(bool acceptAllChangesOnSuccess)
+    {
+        PrepareProtectedData();
+        return base.SaveChanges(acceptAllChangesOnSuccess);
+    }
+
+    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    {
+        PrepareProtectedData();
+        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+    }
+
+    private void PrepareProtectedData()
+    {
+        foreach (var entry in ChangeTracker.Entries().Where(e => e.State is EntityState.Added or EntityState.Modified))
+        {
+            if (entry.Entity is User user)
+            {
+                user.Email = _emailLookup.Normalize(user.Email);
+                user.EmailLookupHash = _emailLookup.Hash(user.Email);
+            }
+            if (entry.Entity is AmbassadorInvite invite)
+            {
+                if (invite.IntendedEmail is not null) invite.IntendedEmail = _emailLookup.Normalize(invite.IntendedEmail);
+                invite.IntendedEmailLookupHash = invite.IntendedEmail is null ? null : _emailLookup.Hash(invite.IntendedEmail);
+            }
+            foreach (var column in ProtectedColumns.Strings.Where(c => c.Limit > 0 && c.Table == entry.Metadata.GetTableName()))
+                if (entry.Property(column.Column).CurrentValue is string value && value.Length > column.Limit)
+                    throw new ArgumentException($"{column.Purpose} must not exceed {column.Limit} characters.");
+        }
     }
 
     public DbSet<Campus> Campuses => Set<Campus>();
@@ -25,10 +67,17 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<Block> Blocks => Set<Block>();
     public DbSet<IcebreakerPrompt> Icebreakers => Set<IcebreakerPrompt>();
+    public DbSet<ProtectionState> ProtectionStates => Set<ProtectionState>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<ProtectionState>(builder =>
+        {
+            builder.HasKey(s => s.Id);
+            builder.Property(s => s.LookupKeyCheck).HasMaxLength(64);
+            builder.Property(s => s.EncryptionCheck).HasColumnType("text");
+        });
 
         // Value Comparers for Collections
         var stringListComparer = new ValueComparer<List<string>>(
@@ -55,7 +104,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<User>(builder =>
         {
             builder.HasKey(u => u.Id);
-            builder.HasIndex(u => u.Email).IsUnique();
+            builder.HasIndex(u => u.EmailLookupHash).IsUnique();
+            builder.Property(u => u.EmailLookupHash).HasMaxLength(64).IsRequired();
             builder.HasIndex(u => new { u.CampusId, u.Status });
 
             builder.Property(u => u.Email).HasMaxLength(120);
@@ -66,14 +116,14 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
             builder.Property(u => u.DeepValues)
                 .HasConversion(
-                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                    v => JsonSerializer.Deserialize<List<string>>(v, (JsonSerializerOptions?)null) ?? new List<string>())
+                    v => Encryption.Encrypt(JsonSerializer.Serialize(v, (JsonSerializerOptions?)null), "Users.DeepValues"),
+                    v => JsonSerializer.Deserialize<List<string>>(Encryption.Decrypt(v, "Users.DeepValues"), (JsonSerializerOptions?)null) ?? new List<string>())
                 .Metadata.SetValueComparer(stringListComparer);
 
             builder.Property(u => u.IntellectualInterests)
                 .HasConversion(
-                    v => JsonSerializer.Serialize(v, (JsonSerializerOptions?)null),
-                    v => JsonSerializer.Deserialize<List<IntellectualInterest>>(v, (JsonSerializerOptions?)null) ?? new List<IntellectualInterest>())
+                    v => Encryption.Encrypt(JsonSerializer.Serialize(v, (JsonSerializerOptions?)null), "Users.IntellectualInterests"),
+                    v => JsonSerializer.Deserialize<List<IntellectualInterest>>(Encryption.Decrypt(v, "Users.IntellectualInterests"), (JsonSerializerOptions?)null) ?? new List<IntellectualInterest>())
                 .Metadata.SetValueComparer(interestsComparer);
 
             builder.HasOne(u => u.Campus)
@@ -217,11 +267,21 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             builder.HasIndex(i => i.Token).IsUnique();
             builder.Property(i => i.Token).HasMaxLength(128).IsRequired();
             builder.Property(i => i.IntendedEmail).HasMaxLength(120);
+            builder.Property(i => i.IntendedEmailLookupHash).HasMaxLength(64);
 
             builder.HasOne(i => i.Campus)
                 .WithMany()
                 .HasForeignKey(i => i.CampusId)
                 .OnDelete(DeleteBehavior.Cascade);
         });
+
+        foreach (var column in ProtectedColumns.Strings)
+        {
+            var entity = modelBuilder.Model.GetEntityTypes().Single(e => e.GetTableName() == column.Table);
+            var property = modelBuilder.Entity(entity.ClrType).Property(column.Column).HasColumnType("text")
+                .HasConversion(new ValueConverter<string, string>(
+                    value => Encryption.Encrypt(value, column.Purpose), value => Encryption.Decrypt(value, column.Purpose)));
+            property.Metadata.SetMaxLength(null);
+        }
     }
 }

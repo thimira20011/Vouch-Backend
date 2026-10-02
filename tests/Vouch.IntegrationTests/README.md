@@ -40,7 +40,8 @@ The runner creates a fresh cluster under the ignored `.test-runtime/run-<GUID>` 
 - SMTP, AI and photo-storage services are replaced by test implementations. No real email, provider calls or photo writes occur.
 - A test-only startup filter simulates client socket addresses for rate-limit/proxy tests. It is defined only in the test project and is never registered in the production API.
 - Configuration tests also verify local/environment/CLI precedence, deployment ignoring local JSON, database-target guards and spoofed-header behavior.
-- Happy-path login after registration is explicitly skipped with its Step 4 defect recorded. The tests do not mask that defect with fake authentication or encryption. Invalid login and actual signed JWT permissions are exercised.
+- Happy-path login after registration now runs alongside concurrent normalized duplicates, maximum Unicode fields, protected raw storage and readable authorized match/message/trust/moderation DTOs. No login test remains skipped.
+- Upgrade cases create additional internally generated databases on the same disposable test server. They exercise fresh installations, both genuine legacy EnsureCreated models, mixed plaintext/CBC identities, collision and wrong-key refusal, unknown schemas, interrupted conversion recovery, key rotation, readiness and secure admin provisioning/password reset. Legacy fixture writes use raw SQL only inside those generated test databases.
 - CI starts a dedicated disposable PostgreSQL 17 service and runs the test project. Missing test-server configuration fails clearly; it never silently falls back to SQLite or your app database.
 
 To run just the unit suite without PostgreSQL:

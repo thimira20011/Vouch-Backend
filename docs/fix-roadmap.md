@@ -15,8 +15,8 @@ This roadmap covers the defects identified in the review and the remaining SRS w
 | 1 | Restore Release builds and verify photo processing | Local checks passed; Alpine execution pending |
 | 2 | Secure configuration and repeatable local setup | Implemented; local checks passed |
 | 3 | PostgreSQL/API integration-test harness | Implemented; local PostgreSQL checks passed; CI pending |
-| 4 | Working encrypted-email lookup and readable DTOs | Pending |
-| 5 | Safe database migrations, backfill and admin bootstrap | Pending |
+| 4 | Working encrypted-email lookup and readable DTOs | Implemented; local regression checks passed |
+| 5 | Safe database migrations, backfill and admin bootstrap | Implemented; synthetic install/upgrade checks passed; live rehearsal required |
 | 6 | Secure ambassador invite redemption | Pending |
 | 7 | University identity verification and onboarding eligibility | Pending |
 | 8 | Account-state authorization and token lifecycle | Pending |
@@ -264,3 +264,20 @@ Verification:
 - Docker/Alpine/CI execution remains pending until GitHub runs the workflow.
 
 No existing application database was accessed or migrated. The runner initializes its own temporary cluster, creates and drops only its generated test database, and stops its server. Production migration/admin provisioning remains Step 5; no automatic credential rotation or live data backfill was performed.
+
+## Steps 4–5 change record — 2 October 2026
+
+Step 4 replaces randomized-ciphertext equality with invariant normalized email HMAC lookup and a unique database index, including controlled conflicts under concurrent registration. Identity/profile/private-text fields and values/interests JSON are encrypted by persistence converters using versioned AES-256-GCM; services and authorized DTO projections receive readable values. Ciphertext columns are widened to text while plaintext limits remain enforced. Unknown keys/formats, corruption and field swaps fail closed; encryption model caching cannot cross key-ring instances. JWTs no longer include name/email PII. Encryption and independent lookup-key rotation are explicit offline operations.
+
+Step 5 removes EnsureCreated and all startup migration/seeding behavior. Explicit inspect/upgrade/seed/provision-admin commands perform private dry-run reports, collision/key/schema checks, reviewed EnsureCreated adoption, migrations and an atomic protected-data backfill. Existing databases require a backup acknowledgement; recognized baselines are verified against complete application tables, columns, indexes and constraints. Unknown schemas are refused without guessing. A completed marker and key checks gate readiness. Admin provisioning creates no fixed credentials, refuses ordinary-account promotion/automatic password replacement, and supports an explicit reviewed password reset. Unsafe schema downgrade is refused; restore/rollback procedures are documented in [database operations](database-operations.md).
+
+Verification:
+
+- Release unit tests: 51 passed, zero failures/skips.
+- Release PostgreSQL/API tests: 36 passed, zero failures/skips. The former successful-login skip is enabled and passes.
+- Tested fresh install/reference seed/admin login, both genuine historical EnsureCreated schemas with mixed plaintext/CBC identities, normalized legacy collisions, wrong legacy keys, schema drift, interrupted expansion/backfill rollback and retry, changed lookup keys, retained-key rotation, admin refusal/idempotency/password reset and non-public-schema refusal.
+- Tested registration → login, concurrent normalized duplicates, 120-character Unicode names/280-character Unicode bios, protected raw storage, readable match/message/trust/moderation DTOs, signed JWT permissions and controlled corruption responses.
+- Exercised inspect/upgrade/seed/admin commands as separate processes without HTTP listeners or secret output.
+- Release build: zero warnings/errors. Release publish: passed, local secret settings excluded. EF confirms no pending model changes. Idempotent migration SQL was executed twice successfully against a legacy fixture; backfill/readiness remained explicitly required. Recovery from a recognized EnsureCreated installation with an empty history table also passed. Docker/Alpine/GitHub CI remains separately pending.
+
+No real application database, credentials or uploaded photos were changed. Existing deployments require the new independent `Security:EmailLookupKey` and the reviewed explicit upgrade before resuming service. Synthetic fixtures establish the implementation's upgrade paths; restore a backup of the actual deployment and rehearse before live use. Legacy CBC cannot retrospectively prove integrity, and field authentication does not bind payloads to row IDs. Later authorization, session revocation, photo privacy and operational acceptance remain their numbered steps.

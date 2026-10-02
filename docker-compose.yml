@@ -33,6 +33,7 @@ services:
       Jwt__Issuer: ${Jwt__Issuer:-VouchBackend}
       Jwt__Audience: ${Jwt__Audience:-VouchFrontend}
       Security__EncryptionKey: ${Security__EncryptionKey:?Set Security__EncryptionKey in .env}
+      Security__EmailLookupKey: ${Security__EmailLookupKey:?Set an independent Security__EmailLookupKey in .env}
       Cors__AllowedOrigins__0: ${Cors__AllowedOrigins__0:-http://localhost:5173}
       Cors__AllowedOrigins__1: ${Cors__AllowedOrigins__1:-http://localhost:3000}
       Smtp__Host: ${Smtp__Host:-}
@@ -44,7 +45,6 @@ services:
       PhotoStorage__BasePath: /app/wwwroot/photos
       PhotoStorage__BaseUrl: ${PhotoStorage__BaseUrl:-/photos}
       Anthropic__ApiKey: ${Anthropic__ApiKey:-}
-      Database__SeedOnStartup: ${Database__SeedOnStartup:-true}
       BackgroundJobs__Enabled: ${BackgroundJobs__Enabled:-true}
     ports:
       - "5000:8080"

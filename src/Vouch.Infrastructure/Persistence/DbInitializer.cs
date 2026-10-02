@@ -10,7 +10,8 @@ public static class DbInitializer
 {
     public static async Task SeedAsync(ApplicationDbContext context)
     {
-        await context.Database.EnsureCreatedAsync();
+        if ((await context.Database.GetPendingMigrationsAsync()).Any())
+            throw new InvalidOperationException("Apply the reviewed database upgrade before seeding reference data.");
 
         // 1. Seed Sri Lankan University Campuses
         if (!await context.Campuses.AnyAsync())

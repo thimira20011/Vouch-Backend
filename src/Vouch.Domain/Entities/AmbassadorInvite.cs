@@ -17,6 +17,7 @@ public class AmbassadorInvite : BaseEntity
 
     /// <summary>Email address this invite was intended for (informational only, not enforced).</summary>
     public string? IntendedEmail { get; set; }
+    public string? IntendedEmailLookupHash { get; set; }
 
     public bool IsUsed { get; set; } = false;
     public DateTimeOffset? UsedAt { get; set; }

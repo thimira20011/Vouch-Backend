@@ -16,6 +16,8 @@ using Vouch.Infrastructure.Security;
 // Console sink: always active. File sink: optional, configurable per environment.
 var builder = WebApplication.CreateBuilder(args);
 StartupConfiguration.AddLocalDevelopmentSettings(builder.Configuration, builder.Environment);
+if (args.Contains("--database-task", StringComparer.Ordinal))
+    return await DatabaseOperations.RunAsync(builder.Configuration);
 builder.Host.UseSerilog((context, services, logger) =>
 {
     logger.ReadFrom.Configuration(context.Configuration).Enrich.FromLogContext()
@@ -102,20 +104,7 @@ StartupConfiguration.AddAuthRateLimiting(builder.Services);
 
 var app = builder.Build();
 
-// 4. Seed Database
-if (builder.Configuration.GetValue("Database:SeedOnStartup", app.Environment.IsDevelopment()))
-{
-    using var scope = app.Services.CreateScope();
-    try
-    {
-        var db = scope.ServiceProvider.GetRequiredService<ApplicationDbContext>();
-        await DbInitializer.SeedAsync(db);
-    }
-    catch (Exception ex)
-    {
-        app.Logger.LogWarning(ex, "Database seeding deferred or encountered error during startup.");
-    }
-}
+// Schema upgrades, protected-data backfill, reference seeds and admin provisioning are explicit deployment commands.
 
 // 5. Configure HTTP Pipeline
 // Exception handler MUST be first so it wraps the entire pipeline (Step 10)
@@ -155,9 +144,10 @@ app.MapGet("/", () => Results.Ok(new
     Application = "Vouch API",
     Version = "2.0.0",
     Philosophy = "Monastic Minimalism & Slow Tech",
-    Status = "Operational"
+    Readiness = "/healthz"
 }));
 
 app.Run();
+return 0;
 
 public partial class Program { }

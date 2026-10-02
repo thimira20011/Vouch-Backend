@@ -19,6 +19,7 @@ public sealed class VouchApiFactory(string connection) : WebApplicationFactory<P
         ["ConnectionStrings:DefaultConnection"] = connection,
         ["Jwt:Key"] = SigningKey, ["Jwt:Issuer"] = "vouch-tests", ["Jwt:Audience"] = "vouch-tests",
         ["Security:EncryptionKey"] = "integration-test-encryption-key-only",
+        ["Security:EmailLookupKey"] = "integration-test-email-lookup-key-only-48-characters",
         ["Database:SeedOnStartup"] = "false", ["BackgroundJobs:Enabled"] = "false",
         ["Logging:File:Enabled"] = "false", ["Logging:LogLevel:Default"] = "Warning",
         ["Smtp:Host"] = "", ["Smtp:User"] = "", ["Smtp:Password"] = "", ["Anthropic:ApiKey"] = "",

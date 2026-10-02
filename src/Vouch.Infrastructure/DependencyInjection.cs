@@ -21,6 +21,7 @@ public static class DependencyInjection
         _ = JwtSettings.Read(configuration);
         // Validate encryption at registration time, not on the first user request.
         services.AddSingleton<IEncryptionService>(new AesEncryptionService(configuration));
+        services.AddSingleton<IEmailLookup>(new EmailLookup(configuration));
 
         services.AddDbContext<ApplicationDbContext>(options =>
             options.UseNpgsql(connectionString));
@@ -30,6 +31,7 @@ public static class DependencyInjection
         // Step 12: Health checks — DB ping via Npgsql probe
         services.AddHealthChecks()
             .AddNpgSql(connectionString, name: "postgres", tags: ["db", "postgres"]);
+        services.AddHealthChecks().AddCheck<DatabaseReadinessCheck>("schema-and-protected-data", tags: ["db"]);
 
         // Step 24: In-memory cache for today's match result (expires at midnight, invalidated on respond)
         services.AddMemoryCache();

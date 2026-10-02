@@ -13,6 +13,7 @@ public class RequiredConfigurationTests
         {
             ["Jwt:Key"] = new string('k', 48), ["Jwt:Issuer"] = "test", ["Jwt:Audience"] = "test",
             ["Security:EncryptionKey"] = new string('e', 32),
+            ["Security:EmailLookupKey"] = new string('h', 48),
             ["ConnectionStrings:DefaultConnection"] = "Host=localhost;Database=test;Username=test"
         };
         foreach (var item in overrides ?? []) values[item.Key] = item.Value;
@@ -42,6 +43,7 @@ public class RequiredConfigurationTests
     [InlineData("ConnectionStrings:DefaultConnection")]
     [InlineData("Jwt:Key")]
     [InlineData("Security:EncryptionKey")]
+    [InlineData("Security:EmailLookupKey")]
     public void Infrastructure_RejectsBlankRequiredConfigurationBeforeResolvingServices(string key)
     {
         Assert.Throws<InvalidOperationException>(() => new ServiceCollection().AddInfrastructure(Config(new() { [key] = " " })));

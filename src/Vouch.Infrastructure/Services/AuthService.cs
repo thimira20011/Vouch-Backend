@@ -11,20 +11,20 @@ public class AuthService : IAuthService
     private readonly IApplicationDbContext _context;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenService _jwtTokenService;
-    private readonly IEncryptionService _encryption;
+    private readonly IEmailLookup _emailLookup;
     private readonly IPhotoStorageService _photoStorage;
 
     public AuthService(
         IApplicationDbContext context,
         IPasswordHasher passwordHasher,
         IJwtTokenService jwtTokenService,
-        IEncryptionService encryption,
+        IEmailLookup emailLookup,
         IPhotoStorageService photoStorage)
     {
         _context = context;
         _passwordHasher = passwordHasher;
         _jwtTokenService = jwtTokenService;
-        _encryption = encryption;
+        _emailLookup = emailLookup;
         _photoStorage = photoStorage;
     }
 
@@ -34,7 +34,7 @@ public class AuthService : IAuthService
             ?? throw new KeyNotFoundException($"Campus '{request.CampusCode}' not found.");
 
         // REQ-1: Users must verify identity via a .ac.lk or university-approved email domain
-        var normalizedEmail = request.Email.ToLower().Trim();
+        var normalizedEmail = _emailLookup.Normalize(request.Email);
         if (!normalizedEmail.EndsWith(campus.DomainPattern, StringComparison.OrdinalIgnoreCase) &&
             !normalizedEmail.EndsWith(".ac.lk", StringComparison.OrdinalIgnoreCase))
         {
@@ -58,9 +58,8 @@ public class AuthService : IAuthService
             invite.UsedAt = DateTimeOffset.UtcNow;
         }
 
-        // NFR-9: Encrypt PII before storing
-        var encryptedEmail = _encryption.Encrypt(normalizedEmail);
-        var emailExists = await _context.Users.AnyAsync(u => u.Email == encryptedEmail, ct);
+        var lookupHash = _emailLookup.Hash(normalizedEmail);
+        var emailExists = await _context.Users.AnyAsync(u => u.EmailLookupHash == lookupHash, ct);
         if (emailExists)
         {
             throw new InvalidOperationException("An account with this university email already exists.");
@@ -71,9 +70,10 @@ public class AuthService : IAuthService
         var user = new User
         {
             CampusId = campus.Id,
-            Email = _encryption.Encrypt(normalizedEmail),     // NFR-9: PII encrypted at rest
+            Email = normalizedEmail, // Persistence converters protect PII; services use readable values.
+            EmailLookupHash = lookupHash,
             PasswordHash = _passwordHasher.HashPassword(request.Password),
-            FullName = _encryption.Encrypt(request.FullName.Trim()), // NFR-9
+            FullName = request.FullName.Trim(),
             Faculty = request.Faculty.Trim(),
             Department = request.Department.Trim(),
             AcademicYear = request.AcademicYear,
@@ -85,14 +85,20 @@ public class AuthService : IAuthService
         };
 
         _context.Users.Add(user);
-        await _context.SaveChangesAsync(ct);
+        try { await _context.SaveChangesAsync(ct); }
+        catch (DbUpdateException ex) when (ex.InnerException is Npgsql.PostgresException
+            { SqlState: "23505", ConstraintName: "IX_Users_EmailLookupHash" })
+        {
+            // Concurrent registrations are resolved by the database uniqueness constraint.
+            throw new InvalidOperationException("An account with this university email already exists.");
+        }
 
         var token = _jwtTokenService.GenerateToken(user);
 
         return new AuthResponse(
             UserId: user.Id,
-            Email: _encryption.Decrypt(user.Email),           // Decrypt for response
-            FullName: _encryption.Decrypt(user.FullName),     // Decrypt for response
+            Email: user.Email,
+            FullName: user.FullName,
             Role: user.Role.ToString(),
             Status: user.Status.ToString(),
             TrustScore: user.TrustScore,
@@ -103,11 +109,10 @@ public class AuthService : IAuthService
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
     {
-        // Encrypt the lookup email to match stored encrypted value (NFR-9)
-        var encryptedEmail = _encryption.Encrypt(request.Email.ToLower().Trim());
+        var lookupHash = _emailLookup.Hash(request.Email);
         var user = await _context.Users
             .AsNoTracking()
-            .FirstOrDefaultAsync(u => u.Email == encryptedEmail, ct)
+            .FirstOrDefaultAsync(u => u.EmailLookupHash == lookupHash, ct)
             ?? throw new UnauthorizedAccessException("Invalid email or password.");
 
         if (user.Status == AccountStatus.Suspended)
@@ -124,8 +129,8 @@ public class AuthService : IAuthService
 
         return new AuthResponse(
             UserId: user.Id,
-            Email: _encryption.Decrypt(user.Email),        // Decrypt PII for response
-            FullName: _encryption.Decrypt(user.FullName),  // Decrypt PII for response
+            Email: user.Email,
+            FullName: user.FullName,
             Role: user.Role.ToString(),
             Status: user.Status.ToString(),
             TrustScore: user.TrustScore,
@@ -143,7 +148,7 @@ public class AuthService : IAuthService
         {
             if (request.Bio.Length > 280)
                 throw new ArgumentException("Bio must not exceed 280 characters.");
-            user.Bio = _encryption.Encrypt(request.Bio); // NFR-9: encrypt PII
+            user.Bio = request.Bio;
         }
         else
         {

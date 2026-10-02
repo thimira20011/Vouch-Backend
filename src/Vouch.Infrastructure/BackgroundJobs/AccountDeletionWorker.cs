@@ -154,10 +154,10 @@ public sealed class AccountDeletionWorker : BackgroundService
 
             // 7. Ambassador invites created by/for this user (if any)
             await db.AmbassadorInvites
-                .Where(i => i.IntendedEmail != null && db.Users
+                .Where(i => i.IntendedEmailLookupHash != null && db.Users
                     .Where(u => u.Id == userId)
-                    .Select(u => u.Email)
-                    .Contains(i.IntendedEmail))
+                    .Select(u => u.EmailLookupHash)
+                    .Contains(i.IntendedEmailLookupHash))
                 .ExecuteDeleteAsync(ct);
 
             // 8. Finally: the user record itself
