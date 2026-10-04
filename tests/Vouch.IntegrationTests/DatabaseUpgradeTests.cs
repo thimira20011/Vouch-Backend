@@ -44,7 +44,7 @@ public sealed class DatabaseUpgradeTests : IAsyncLifetime
         var provision = new ArchitectProvisioner(db, PostgresFixture.Lookup, PostgresFixture.Encryption, new BCryptPasswordHasher());
         var id = await provision.ProvisionAsync("admin@example.org", "AdminTestPassword123!", "Test Architect", "SUSL");
         Assert.Equal(id, await provision.ProvisionAsync(" ADMIN@EXAMPLE.ORG ", "AdminTestPassword123!", "Test Architect", "SUSL"));
-        var auth = new AuthService(db, new BCryptPasswordHasher(), new JwtTokenService(PostgresFixture.TestSettings), PostgresFixture.Lookup, new DisabledPhotoStorage());
+        var auth = new AuthService(db, new BCryptPasswordHasher(), new JwtTokenService(PostgresFixture.TestSettings), PostgresFixture.Lookup, new DisabledPhotoStorage(), new RecordingEmailService(), TimeProvider.System);
         Assert.Equal("Architect", (await auth.LoginAsync(new("admin@example.org", "AdminTestPassword123!"))).Role);
         Assert.True((await Upgrade(db).ApplyAsync(backupConfirmed: true)).CanApply);
         Assert.Single(await db.Users.ToListAsync());
@@ -188,7 +188,7 @@ public sealed class DatabaseUpgradeTests : IAsyncLifetime
         await Assert.ThrowsAsync<InvalidOperationException>(() => new DatabaseUpgrade(next, encryption, lookup).ApplyAsync(backupConfirmed: true));
         await new DatabaseUpgrade(next, encryption, lookup).ApplyAsync(backupConfirmed: true, rotateLookupKey: true);
         await DatabaseReadinessCheck.VerifyAsync(next, lookup, encryption);
-        var auth = new AuthService(next, new BCryptPasswordHasher(), new JwtTokenService(PostgresFixture.TestSettings), lookup, new DisabledPhotoStorage());
+        var auth = new AuthService(next, new BCryptPasswordHasher(), new JwtTokenService(PostgresFixture.TestSettings), lookup, new DisabledPhotoStorage(), new RecordingEmailService(), TimeProvider.System);
         Assert.Equal("Architect", (await auth.LoginAsync(new(" ROTATE@EXAMPLE.ORG ", "AdminTestPassword123!"))).Role);
         await Assert.ThrowsAsync<InvalidOperationException>(() => DatabaseReadinessCheck.VerifyAsync(next, PostgresFixture.Lookup, encryption));
     }
@@ -239,7 +239,7 @@ public sealed class DatabaseUpgradeTests : IAsyncLifetime
         Assert.Contains("Architect provisioned/verified", provision.Output);
         Assert.Equal(0, (await CommandAsync("provision-admin")).Exit);
         await using var db = Context();
-        var auth = new AuthService(db, new BCryptPasswordHasher(), new JwtTokenService(PostgresFixture.TestSettings), PostgresFixture.Lookup, new DisabledPhotoStorage());
+        var auth = new AuthService(db, new BCryptPasswordHasher(), new JwtTokenService(PostgresFixture.TestSettings), PostgresFixture.Lookup, new DisabledPhotoStorage(), new RecordingEmailService(), TimeProvider.System);
         Assert.Equal("Architect", (await auth.LoginAsync(new("process-admin@example.org", "PrivateProcessPassword123!"))).Role);
         Assert.Equal(1, (await CommandAsync("unknown-operation")).Exit);
         Assert.Equal(1, (await CommandAsync("upgrade")).Exit); // Existing schema requires backup acknowledgement.
@@ -342,6 +342,30 @@ public sealed class DatabaseUpgradeTests : IAsyncLifetime
         insert.Parameters.AddWithValue("id", _campusId);
         insert.Parameters.AddWithValue("now", DateTimeOffset.UtcNow);
         await insert.ExecuteNonQueryAsync();
+    }
+
+    [Fact]
+    public async Task IdentityUpgradeHashesLegacyInvitesAndRequiresNewEligibilityEvidence()
+    {
+        await CreateLegacyAsync();
+        var legacyUserId = await InsertLegacyAsync("legacy@test.ac.lk", "Legacy Ambassador", false);
+        await RawAsync("UPDATE \"Users\" SET \"Role\" = 3, \"HasFoundingMemberBadge\" = true WHERE \"Id\" = @id", legacyUserId);
+        const string legacyToken = "legacy-random-bearer-token-which-must-not-remain-plaintext";
+        await using var db = Context();
+        await db.Database.ExecuteSqlInterpolatedAsync($"""
+            INSERT INTO "AmbassadorInvites" ("Id", "CampusId", "IssuedByArchitectId", "Token", "IntendedEmail", "IsUsed", "ExpiresAt", "CreatedAt")
+            VALUES ({Guid.NewGuid()}, {_campusId}, {Guid.NewGuid()}, {legacyToken}, {"invitee@test.ac.lk"}, false, {DateTimeOffset.UtcNow.AddDays(7)}, {DateTimeOffset.UtcNow})
+            """);
+        await Upgrade(db).ApplyAsync(backupConfirmed: true);
+        var invite = await db.AmbassadorInvites.SingleAsync();
+        Assert.Equal(SingleUseToken.Hash(legacyToken), invite.TokenHash);
+        Assert.Equal(PostgresFixture.Lookup.Hash("invitee@test.ac.lk"), invite.IntendedEmailLookupHash);
+        var user = await db.Users.SingleAsync();
+        Assert.Equal(Vouch.Domain.Enums.AccountStatus.InIncubation, user.Status);
+        Assert.False(user.HasFoundingMemberBadge);
+        Assert.Null(user.EmailVerifiedAt); Assert.Null(user.OnboardingCompletedAt); Assert.Null(user.AmbassadorApprovedAt);
+        Assert.False((await db.Campuses.SingleAsync()).IsSoftLaunchUnlocked);
+        Assert.True((await Upgrade(db).ApplyAsync(backupConfirmed: true)).CanApply); // current schema still identifies correctly
     }
 
     private async Task<Guid> InsertLegacyAsync(string email, string name, bool encrypted)

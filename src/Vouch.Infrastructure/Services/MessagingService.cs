@@ -5,6 +5,7 @@ using Vouch.Application.Features.Messaging;
 using Vouch.Domain.Entities;
 using Vouch.Domain.Enums;
 using Vouch.Domain.Services;
+using Vouch.Infrastructure.Security;
 
 namespace Vouch.Infrastructure.Services;
 
@@ -21,11 +22,14 @@ public class MessagingService : IMessagingService
 
     public async Task<MessageDto> SendMessageAsync(Guid senderId, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
     {
+        await MemberEligibility.RequireActiveAsync(_context, senderId, ct);
         var conversation = await _context.Conversations
             .Include(c => c.UserA)
             .Include(c => c.UserB)
             .FirstOrDefaultAsync(c => c.Id == conversationId, ct)
             ?? throw new KeyNotFoundException("Conversation not found.");
+        MemberEligibility.RequireActive(conversation.UserA);
+        MemberEligibility.RequireActive(conversation.UserB);
 
         if (conversation.UserAId != senderId && conversation.UserBId != senderId)
         {
@@ -105,6 +109,7 @@ public class MessagingService : IMessagingService
 
     public async Task<PagedResult<ConversationDto>> GetUserConversationsAsync(Guid userId, int page = 1, int pageSize = 20, CancellationToken ct = default)
     {
+        await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
@@ -149,6 +154,7 @@ public class MessagingService : IMessagingService
 
     public async Task<PagedResult<MessageDto>> GetConversationMessagesAsync(Guid userId, Guid conversationId, int page = 1, int pageSize = 50, CancellationToken ct = default)
     {
+        await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
@@ -189,6 +195,7 @@ public class MessagingService : IMessagingService
 
     public async Task<bool> PauseConversationAsync(Guid userId, Guid conversationId, CancellationToken ct = default)
     {
+        await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         var conversation = await _context.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId, ct)
             ?? throw new KeyNotFoundException("Conversation not found.");
 
@@ -211,6 +218,7 @@ public class MessagingService : IMessagingService
 
     public async Task<bool> ResumeConversationAsync(Guid userId, Guid conversationId, CancellationToken ct = default)
     {
+        await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         var conversation = await _context.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId, ct)
             ?? throw new KeyNotFoundException("Conversation not found.");
 

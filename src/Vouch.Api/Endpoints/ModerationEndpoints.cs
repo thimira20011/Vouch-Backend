@@ -35,6 +35,14 @@ public static class ModerationEndpoints
 
         var architectGroup = app.MapGroup("/api/architect").WithTags("The Architect (Admin)").RequireAuthorization(p => p.RequireRole("Architect"));
 
+        architectGroup.MapPost("/ambassadors/{userId:guid}/approve", async (Guid userId, ClaimsPrincipal principal,
+            IModerationService service, CancellationToken ct) =>
+        {
+            if (!Guid.TryParse(principal.FindFirstValue(ClaimTypes.NameIdentifier), out var architectId)) return Results.Unauthorized();
+            await service.ApproveAmbassadorAsync(architectId, userId, ct);
+            return Results.Ok(new { message = "Ambassador manually approved." });
+        }).WithName("ApproveAmbassador");
+
         architectGroup.MapGet("/dashboard/{campusId:guid}", async (Guid campusId, IModerationService moderationService, CancellationToken ct) =>
         {
             var dashboard = await moderationService.GetArchitectDashboardAsync(campusId, ct);

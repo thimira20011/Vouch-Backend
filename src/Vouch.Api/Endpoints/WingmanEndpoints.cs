@@ -8,7 +8,8 @@ public static class WingmanEndpoints
 {
     public static IEndpointRouteBuilder MapWingmanEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/wingman").WithTags("AI Wingman (Icebreaker Service)").RequireAuthorization();
+        var group = app.MapGroup("/api/wingman").WithTags("AI Wingman (Icebreaker Service)").RequireAuthorization()
+            .AddEndpointFilter<Vouch.Api.Middleware.EligibleMemberFilter>();
 
         group.MapGet("/icebreakers/conversation/{conversationId:guid}", async (
             Guid conversationId,
@@ -34,6 +35,7 @@ public static class WingmanEndpoints
 
             var otherUser = conversation.UserAId == userId ? conversation.UserB : conversation.UserA;
             var currentUser = conversation.UserAId == userId ? conversation.UserA : conversation.UserB;
+            Vouch.Infrastructure.Security.MemberEligibility.RequireActive(otherUser);
 
             var suggestions = await wingmanService.GenerateIcebreakersAsync(currentUser, otherUser, ct);
             return Results.Ok(suggestions);

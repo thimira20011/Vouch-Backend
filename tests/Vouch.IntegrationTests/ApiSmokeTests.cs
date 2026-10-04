@@ -76,10 +76,11 @@ public sealed class ApiSmokeTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.NotNull(registered);
         Assert.Equal("InIncubation", registered.Status);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", registered.Token);
+        await VerifyAsync(client, registered.Email);
         var onboard = await client.PostAsJsonAsync("/api/auth/onboarding", new CompleteOnboardingRequest(
             "Short test bio", ["Sincerity"], [IntellectualInterest.Philosophy]));
         Assert.Equal(HttpStatusCode.OK, onboard.StatusCode);
-        Assert.Equal(HttpStatusCode.OK, (await client.GetAsync("/api/matches/today")).StatusCode);
+        Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync("/api/matches/today")).StatusCode); // verified seekers still need three vouches
         await using var db = postgres.CreateContext();
         var user = await db.Users.SingleAsync(u => u.Id == registered.UserId);
         Assert.Equal(registered.Email, user.Email);
@@ -118,6 +119,7 @@ public sealed class ApiSmokeTests(PostgresFixture postgres) : IAsyncLifetime
         var jwt = new System.IdentityModel.Tokens.Jwt.JwtSecurityTokenHandler().ReadJwtToken(registered.Token);
         Assert.DoesNotContain(jwt.Claims, claim => claim.Type is "email" or "unique_name" || claim.Value == request.FullName || claim.Value == request.Email);
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", registered.Token);
+        await VerifyAsync(client, registered.Email);
         var bio = new string('ස', 280);
         Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/auth/onboarding", new CompleteOnboardingRequest(bio, ["Sincerity"], [IntellectualInterest.Science]))).StatusCode);
         await using var db = postgres.CreateContext();
@@ -167,7 +169,8 @@ public sealed class ApiSmokeTests(PostgresFixture postgres) : IAsyncLifetime
         User CreateUser(string email, string name) => new()
         {
             CampusId = _campusId, Email = email, FullName = name, PasswordHash = "test-unused", Faculty = "Science", Department = "Computing",
-            AcademicYear = 2, Bio = "Readable biography", DeepValues = ["Sincerity"], IntellectualInterests = [IntellectualInterest.Philosophy], Status = AccountStatus.Active
+            AcademicYear = 2, Bio = "Readable biography", DeepValues = ["Sincerity"], IntellectualInterests = [IntellectualInterest.Philosophy], Status = AccountStatus.Active,
+            EmailVerifiedAt = DateTimeOffset.UtcNow, OnboardingCompletedAt = DateTimeOffset.UtcNow
         };
         var first = CreateUser("first@test.ac.lk", "First Person");
         var second = CreateUser("second@test.ac.lk", "Second Person");
@@ -263,5 +266,12 @@ public sealed class ApiSmokeTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.IsType<RecordingEmailService>(_factory.Services.GetRequiredService<IEmailService>());
         Assert.IsType<TestWingmanService>(_factory.Services.GetRequiredService<IAiWingmanService>());
         Assert.IsType<DisabledPhotoStorage>(_factory.Services.GetRequiredService<IPhotoStorageService>());
+    }
+
+    private async Task VerifyAsync(HttpClient client, string email)
+    {
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsync("/api/auth/verification/request", null)).StatusCode);
+        var token = _factory.Services.GetRequiredService<RecordingEmailService>().VerificationTokens[email];
+        Assert.Equal(HttpStatusCode.OK, (await client.PostAsJsonAsync("/api/auth/verification/confirm", new VerifyEmailRequest(token))).StatusCode);
     }
 }

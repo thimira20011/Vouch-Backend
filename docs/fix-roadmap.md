@@ -17,8 +17,8 @@ This roadmap covers the defects identified in the review and the remaining SRS w
 | 3 | PostgreSQL/API integration-test harness | Implemented; local PostgreSQL checks passed; CI pending |
 | 4 | Working encrypted-email lookup and readable DTOs | Implemented; local regression checks passed |
 | 5 | Safe database migrations, backfill and admin bootstrap | Implemented; synthetic install/upgrade checks passed; live rehearsal required |
-| 6 | Secure ambassador invite redemption | Pending |
-| 7 | University identity verification and onboarding eligibility | Pending |
+| 6 | Secure ambassador invite redemption | Implemented; local PostgreSQL/API regression checks passed |
+| 7 | University identity verification and onboarding eligibility | Implemented; local checks passed; real SMTP/university acceptance pending |
 | 8 | Account-state authorization and token lifecycle | Pending |
 | 9 | Campus, block and realtime resource access controls | Pending |
 | 10 | Correct vouch submission, counters and peer requests | Pending |
@@ -102,7 +102,7 @@ Actions: verify university mailbox ownership or approved university authenticati
 
 Checks: email suffix alone cannot activate identity; campus cannot be spoofed; unknown/empty choices fail; photos remain optional; readiness includes actual onboarding and qualifying vouches.
 
-Decision before gate implementation: the supplied PDF labels itself v2.0.0 despite a v2.2 filename; confirm the requirement baseline. Record whether “each ambassador” means every active ambassador or an explicitly selected founding cohort. Until confirmed, do not silently relax the gate.
+Decision recorded 4 October 2026: retain the documented v2.0.0 content baseline. The user selected **every active ambassador**, including those above the minimum. Verified onboarding and recorded Architect approval are required; no selected-cohort exception applies.
 
 Depends on: Steps 4–6. Covers P0-03 and P1-05.
 
@@ -281,3 +281,19 @@ Verification:
 - Release build: zero warnings/errors. Release publish: passed, local secret settings excluded. EF confirms no pending model changes. Idempotent migration SQL was executed twice successfully against a legacy fixture; backfill/readiness remained explicitly required. Recovery from a recognized EnsureCreated installation with an empty history table also passed. Docker/Alpine/GitHub CI remains separately pending.
 
 No real application database, credentials or uploaded photos were changed. Existing deployments require the new independent `Security:EmailLookupKey` and the reviewed explicit upgrade before resuming service. Synthetic fixtures establish the implementation's upgrade paths; restore a backup of the actual deployment and rehearse before live use. Legacy CBC cannot retrospectively prove integrity, and field authentication does not bind payloads to row IDs. Later authorization, session revocation, photo privacy and operational acceptance remain their numbered steps.
+
+## Steps 6–7 change record — 4 October 2026
+
+Invites now require a campus-bound recipient, store only a token digest, and validate on every campus state. Conditional redemption and registration share a transaction. Issuance/redemption/manual approval retain actor and time evidence. Verification uses a mailbox-delivered, hashed, expiring, single-use challenge; SMTP failure rolls it back. Curated distinct values/interests and null-safe validation establish explicit verified/onboarded status. Invited ambassadors remain incubating until both are complete. Membership workflows and matching candidates require current eligibility; ordinary activation counts qualifying peers rather than trusting old counters.
+
+The user selected every Active ambassador for launch. Shared database queries require verified onboarding, approval and qualifying outgoing vouches; tracked user/vouch writes recalculate readiness inside the transaction with campus locking. Dashboard GET remains read-only. The new migration hashes legacy invites, resets unproven non-Architect eligibility and gates, and requires existing ambassador reapproval. Its downgrade is deliberately unavailable because digests cannot restore bearer tokens; rollback restores the pre-upgrade backup. See [identity and onboarding](identity-and-onboarding.md).
+
+Verification:
+
+- Release solution build: passed, zero warnings/errors.
+- Full Release tests using temporary PostgreSQL 17.11: **119 passed** (58 unit, 61 PostgreSQL/API integration), zero failed/skipped.
+- Covered locked/unlocked invalid invites, blank/expired/used/wrong recipient/campus, parallel registration, injected database failure and rollback/retry, legacy token hashing, strict domain mapping, ownership/onboarding gating, challenge expiry/resend/reuse/identity changes/concurrency, delivery outage, manual approval and strict launch recalculation.
+- Verified setup-script parsing, quoted/semicolon password handling and preservation of unrelated JWT/encryption/configuration values with a disposable local settings fixture.
+- Real SMTP/university verification, actual backup rehearsal, Docker/Alpine and CI acceptance remain external checks. Complete session/campus/block controls and vouch-counter concurrency remain Steps 8–10.
+
+The user additionally selected an existing Supabase project for development. [Setup and production cutover](supabase-development.md) use its Session pooler and the existing Npgsql connection setting. The supplied root certificate enabled verified TLS and successful login. Read-only inspection confirmed an empty public schema; the operator confirmed Data API was disabled. All four migrations and reference seeds were applied, preserving Supabase-managed schemas and creating no accounts. Post-install inspection was clean, and the temporary API returned HTTP 200 Healthy plus a successful onboarding-options response. Added safe connectivity error categories: seven focused privacy/diagnostic tests passed. Disposable integration tests remain isolated from the hosted project.

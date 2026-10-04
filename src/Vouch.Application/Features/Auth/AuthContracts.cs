@@ -18,6 +18,9 @@ public record LoginRequest(
     string Password
 );
 
+public record VerifyEmailRequest(string Token);
+public record IdentityStatusResponse(bool EmailVerified, bool OnboardingCompleted, string Status);
+
 public record CompleteOnboardingRequest(
     string Bio,
     List<string> DeepValues,
@@ -33,13 +36,18 @@ public record AuthResponse(
     string Status,
     double TrustScore,
     bool HasFoundingMemberBadge,
-    string Token
+    string Token,
+    bool EmailVerified = false,
+    bool OnboardingCompleted = false
 );
 
 public interface IAuthService
 {
     Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default);
     Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default);
+    Task RequestEmailVerificationAsync(Guid userId, CancellationToken ct = default);
+    Task<IdentityStatusResponse> VerifyEmailAsync(Guid userId, VerifyEmailRequest request, CancellationToken ct = default);
+    Task<IdentityStatusResponse> GetIdentityStatusAsync(Guid userId, CancellationToken ct = default);
     Task CompleteOnboardingAsync(Guid userId, CompleteOnboardingRequest request, CancellationToken ct = default);
     Task<(string OriginalUrl, string AbstractUrl)> UploadPhotoAsync(Guid userId, Stream stream, string contentType, CancellationToken ct = default); // Step 21 REQ-17
     Task RequestAccountDeletionAsync(Guid userId, CancellationToken ct = default); // NFR-6

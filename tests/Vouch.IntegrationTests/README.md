@@ -43,6 +43,7 @@ The runner creates a fresh cluster under the ignored `.test-runtime/run-<GUID>` 
 - Happy-path login after registration now runs alongside concurrent normalized duplicates, maximum Unicode fields, protected raw storage and readable authorized match/message/trust/moderation DTOs. No login test remains skipped.
 - Upgrade cases create additional internally generated databases on the same disposable test server. They exercise fresh installations, both genuine legacy EnsureCreated models, mixed plaintext/CBC identities, collision and wrong-key refusal, unknown schemas, interrupted conversion recovery, key rotation, readiness and secure admin provisioning/password reset. Legacy fixture writes use raw SQL only inside those generated test databases.
 - CI starts a dedicated disposable PostgreSQL 17 service and runs the test project. Missing test-server configuration fails clearly; it never silently falls back to SQLite or your app database.
+- Identity/invite cases cover single-use concurrent redemption, persistence rollback, strict campus domains, verified onboarding, challenge expiry/resend/reuse/identity binding and delivery failures, manual approval, and every-active-ambassador launch recalculation. Verification mail uses the recording sender, never real SMTP.
 
 To run just the unit suite without PostgreSQL:
 

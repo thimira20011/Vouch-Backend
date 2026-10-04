@@ -6,6 +6,7 @@ using Vouch.Application.Features.Matching;
 using Vouch.Domain.Entities;
 using Vouch.Domain.Enums;
 using Vouch.Domain.Services;
+using Vouch.Infrastructure.Security;
 
 namespace Vouch.Infrastructure.Services;
 
@@ -24,12 +25,16 @@ public class MatchService : IMatchService
 
     public async Task<TodayConnectionResponse> GetTodayConnectionAsync(Guid userId, CancellationToken ct = default)
     {
+        await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         // Step 24: Cache today's connection per user, invalidated at midnight or on RespondToMatchAsync
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
         var cacheKey = $"match:{userId}:{today:yyyy-MM-dd}";
 
         if (_cache.TryGetValue(cacheKey, out TodayConnectionResponse? cached) && cached is not null)
+        {
+            if (cached.Match is not null) await MemberEligibility.RequireActiveAsync(_context, cached.Match.MatchedUserId, ct);
             return cached;
+        }
 
         var user = await _context.Users
             .AsNoTracking()
@@ -47,6 +52,7 @@ public class MatchService : IMatchService
         if (existingMatch != null)
         {
             var matchedUser = existingMatch.UserAId == userId ? existingMatch.UserB : existingMatch.UserA;
+            MemberEligibility.RequireActive(matchedUser);
             var sharedValues = user.DeepValues.Intersect(matchedUser.DeepValues, StringComparer.OrdinalIgnoreCase).ToList();
             var sharedInterests = user.IntellectualInterests.Intersect(matchedUser.IntellectualInterests).ToList();
 
@@ -107,8 +113,11 @@ public class MatchService : IMatchService
 
     public async Task<bool> RespondToMatchAsync(Guid userId, Guid matchId, bool accept, CancellationToken ct = default)
     {
+        await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         var match = await _context.Matches.FirstOrDefaultAsync(m => m.Id == matchId, ct)
             ?? throw new KeyNotFoundException("Match not found.");
+        await MemberEligibility.RequireActiveAsync(_context, match.UserAId, ct);
+        await MemberEligibility.RequireActiveAsync(_context, match.UserBId, ct);
 
         if (match.UserAId != userId && match.UserBId != userId)
         {
@@ -174,6 +183,7 @@ public class MatchService : IMatchService
         var eligibleUsers = await _context.Users
             .Where(u => u.CampusId == campusId &&
                         u.Status == AccountStatus.Active &&
+                        u.EmailVerifiedAt != null && u.OnboardingCompletedAt != null &&
                         !u.IsSoftHiddenFromMatchmaking &&
                         u.DeletionRequestedAt == null)
             .ToListAsync(ct);

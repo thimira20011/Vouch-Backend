@@ -13,6 +13,7 @@ namespace Vouch.IntegrationTests.Infrastructure;
 
 public sealed class VouchApiFactory(string connection) : WebApplicationFactory<Program>
 {
+    public MutableTimeProvider Clock { get; } = new();
     public const string SigningKey = "integration-test-signing-key-only-48-characters-long";
     public static Dictionary<string, string?> Settings(string connection) => new()
     {
@@ -38,7 +39,12 @@ public sealed class VouchApiFactory(string connection) : WebApplicationFactory<P
             services.RemoveAll<IEmailService>();
             services.RemoveAll<IAiWingmanService>();
             services.RemoveAll<IPhotoStorageService>();
-            services.AddSingleton<IEmailService, RecordingEmailService>();
+            services.RemoveAll<IVerificationEmailSender>();
+            services.RemoveAll<TimeProvider>();
+            services.AddSingleton<TimeProvider>(Clock);
+            services.AddSingleton<RecordingEmailService>();
+            services.AddSingleton<IEmailService>(sp => sp.GetRequiredService<RecordingEmailService>());
+            services.AddSingleton<IVerificationEmailSender>(sp => sp.GetRequiredService<RecordingEmailService>());
             services.AddSingleton<IAiWingmanService, TestWingmanService>();
             services.AddSingleton<IPhotoStorageService, DisabledPhotoStorage>();
             services.AddTransient<IStartupFilter, TestClientAddressFilter>();
@@ -66,14 +72,29 @@ public sealed class VouchApiFactory(string connection) : WebApplicationFactory<P
     }
 }
 
-public sealed class RecordingEmailService : IEmailService
+public sealed class RecordingEmailService : IEmailService, IVerificationEmailSender
 {
+    public System.Collections.Concurrent.ConcurrentDictionary<string, string> VerificationTokens { get; } = new();
+    public bool FailVerification { get; set; }
+    public Task SendVerificationAsync(string to, string token, CancellationToken ct = default)
+    {
+        if (FailVerification) throw new Vouch.Application.Common.VerificationDeliveryException();
+        VerificationTokens[to] = token;
+        return Task.CompletedTask;
+    }
     public int Calls { get; private set; }
     public Task SendAsync(string to, string subject, string body, CancellationToken ct = default)
     {
         Calls++;
         return Task.CompletedTask;
     }
+}
+
+public sealed class MutableTimeProvider : TimeProvider
+{
+    private DateTimeOffset _now = DateTimeOffset.UtcNow;
+    public override DateTimeOffset GetUtcNow() => _now;
+    public void Advance(TimeSpan interval) => _now += interval;
 }
 
 public sealed class TestWingmanService : IAiWingmanService

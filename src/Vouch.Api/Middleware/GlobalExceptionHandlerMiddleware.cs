@@ -42,6 +42,9 @@ public class GlobalExceptionHandlerMiddleware
     {
         var (statusCode, message) = ex switch
         {
+            Vouch.Application.Common.EligibilityException => (StatusCodes.Status403Forbidden, ex.Message),
+            Vouch.Application.Common.VerificationDeliveryException => (StatusCodes.Status503ServiceUnavailable, ex.Message),
+            FluentValidation.ValidationException => (StatusCodes.Status400BadRequest, "Request validation failed."),
             // 400 — caller sent bad data
             ArgumentException       => (StatusCodes.Status400BadRequest,  ex.Message),
             FormatException         => (StatusCodes.Status400BadRequest,  "Invalid request format."),

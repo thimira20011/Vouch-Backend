@@ -1,5 +1,7 @@
 # Database installation, upgrades and protected data
 
+Steps 6–7 add an irreversible invite-digest/identity migration. See [identity and onboarding](identity-and-onboarding.md#upgrade-and-rollback) before upgrading: existing non-Architect accounts return to incubation and need new eligibility evidence; legacy ambassadors require explicit manual approval.
+
 Updated 2 October 2026. These operations are explicit deployment tasks. API startup never creates schemas, migrates, backfills, seeds or creates privileged accounts. `/healthz` checks the migration history, conversion marker, lookup-key verification, encryption canary and an email read; a PostgreSQL ping alone is insufficient. The root endpoint points to readiness rather than declaring the database operational.
 
 ## Configuration
@@ -109,4 +111,4 @@ To rotate the independent lookup key: stop writers, back up/rehearse, supply the
 
 ## Verification scope
 
-The integration suite creates its own disposable PostgreSQL databases. It covers fresh migrations, both genuine EnsureCreated baselines, mixed plaintext/CBC data, private collision reports, wrong keys, unknown schemas, interrupted conversion/retry, readiness, explicit key rotation, bootstrap refusal/reset, login, concurrent duplicate registration, maximum Unicode fields and readable authorized match/message/trust/moderation DTOs. These are synthetic upgrade fixtures; rehearse with a restored copy of your actual database before live deployment. No existing project database was migrated by this implementation work.
+The integration suite creates its own disposable PostgreSQL databases. It covers fresh migrations, both genuine EnsureCreated baselines, mixed plaintext/CBC data, private collision reports, wrong keys, unknown schemas, interrupted conversion/retry, readiness, explicit key rotation, bootstrap refusal/reset, login, concurrent duplicate registration, maximum Unicode fields and readable authorized match/message/trust/moderation DTOs. These are synthetic upgrade fixtures; rehearse with a restored copy of your actual database before live deployment. The selected Supabase development project was initialized on 4 October 2026 after read-only inspection confirmed an empty public schema; see its [initialization record](supabase-development.md#development-initialization-record--4-october-2026). No existing Vouch records were converted and no production database was changed.

@@ -38,6 +38,7 @@ public class RegisterRequestValidator : AbstractValidator<RegisterRequest>
         RuleFor(x => x.CampusCode)
             .NotEmpty().WithMessage("Campus code is required.")
             .MaximumLength(20).WithMessage("Campus code must not exceed 20 characters.");
+        RuleFor(x => x.InviteToken).NotEmpty().MaximumLength(128).When(x => x.InviteToken is not null);
     }
 }
 
@@ -62,17 +63,29 @@ public class CompleteOnboardingRequestValidator : AbstractValidator<CompleteOnbo
             .MaximumLength(280).WithMessage("Bio must not exceed 280 characters.");
 
         RuleFor(x => x.DeepValues)
+            .Cascade(CascadeMode.Stop)
             .NotNull().WithMessage("Deep values are required.")
             .Must(v => v.Count >= 1 && v.Count <= 5)
                 .WithMessage("Select between 1 and 5 deep values.");
 
         RuleForEach(x => x.DeepValues)
             .NotEmpty().WithMessage("Each deep value must not be empty.")
-            .MaximumLength(60).WithMessage("Each deep value must not exceed 60 characters.");
+            .Must(v => OnboardingOptions.DeepValues.Contains(v)).WithMessage("Select a value from the curated catalogue.");
+        RuleFor(x => x.DeepValues).Must(v => v is null || v.Distinct().Count() == v.Count)
+            .WithMessage("Select distinct deep values.");
 
         RuleFor(x => x.IntellectualInterests)
+            .Cascade(CascadeMode.Stop)
             .NotNull().WithMessage("Intellectual interests are required.")
             .Must(i => i.Count >= 1 && i.Count <= 5)
                 .WithMessage("Select between 1 and 5 intellectual interests.");
+        RuleForEach(x => x.IntellectualInterests).IsInEnum();
+        RuleFor(x => x.IntellectualInterests).Must(v => v is null || v.Distinct().Count() == v.Count)
+            .WithMessage("Select distinct interests.");
     }
+}
+
+public sealed class VerifyEmailRequestValidator : AbstractValidator<VerifyEmailRequest>
+{
+    public VerifyEmailRequestValidator() => RuleFor(x => x.Token).NotEmpty().MaximumLength(128);
 }

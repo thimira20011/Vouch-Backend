@@ -56,9 +56,33 @@ public static class DatabaseOperations
         catch (Exception ex)
         {
             // Provider exceptions can include SQL/PII. Print only errors authored by these operations.
-            Console.Error.WriteLine(ex is ArgumentException or InvalidOperationException or ProtectedDataException
-                ? ex.Message : "Database operation failed. No protected values or credentials are printed. Check connectivity/schema and recover using the operations guide.");
+            Console.Error.WriteLine(SafeFailureMessage(ex));
             return 1;
         }
+    }
+
+    public static string SafeFailureMessage(Exception exception)
+    {
+        // Provider diagnostics can contain passwords, statements or protected fields.
+        // Describe only known error categories/codes, including nested connection failures.
+        for (Exception? cause = exception; cause is not null; cause = cause.InnerException)
+        {
+            if (cause is Npgsql.PostgresException postgres)
+                return postgres.SqlState switch
+                {
+                    "28P01" => "Database authentication failed. Check the database password and pooler username in local configuration.",
+                    "28000" => "Database login was rejected. Check the Supabase project/pooler username and connection mode.",
+                    "3D000" => "The configured database does not exist. Check the database name in local configuration.",
+                    _ => "PostgreSQL rejected the database operation. No provider details or protected values are printed; review schema and permissions."
+                };
+            if (cause is System.Security.Authentication.AuthenticationException)
+                return "Database TLS certificate validation failed. Configure the trusted project root certificate; keep SSL Mode=VerifyFull.";
+            if (cause is System.Net.Sockets.SocketException socket)
+                return $"Database host could not be reached (socket error: {socket.SocketErrorCode}). Check DNS/network access and the Supabase connection host/port.";
+            if (cause is TimeoutException)
+                return "Database connection/operation timed out. Check Supabase project availability, pooler settings and network access.";
+        }
+        return exception is ArgumentException or InvalidOperationException or ProtectedDataException
+            ? exception.Message : "Database operation failed. No protected values or credentials are printed. Check connectivity/schema and recover using the operations guide.";
     }
 }

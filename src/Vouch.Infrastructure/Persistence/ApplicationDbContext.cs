@@ -25,15 +25,42 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         => optionsBuilder.ReplaceService<IModelCacheKeyFactory, ProtectedModelCacheKeyFactory>();
 
     public override int SaveChanges(bool acceptAllChangesOnSuccess)
-    {
-        PrepareProtectedData();
-        return base.SaveChanges(acceptAllChangesOnSuccess);
-    }
+        => SaveChangesAsync(acceptAllChangesOnSuccess).GetAwaiter().GetResult();
 
-    public override Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
+    public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         PrepareProtectedData();
-        return base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        var campuses = ChangeTracker.Entries<User>().Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+            .SelectMany(e => new[] { e.Entity.CampusId, e.Property(u => u.CampusId).OriginalValue }).ToHashSet();
+        var changedVouches = ChangeTracker.Entries<VouchRecord>().Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted).ToArray();
+        var voucherIds = changedVouches.SelectMany(e => new[] { e.Entity.VoucherUserId, e.Property(v => v.VoucherUserId).OriginalValue }).ToArray();
+        if (voucherIds.Length > 0)
+            foreach (var id in await Users.Where(u => voucherIds.Contains(u.Id)).Select(u => u.CampusId).Distinct().ToListAsync(cancellationToken)) campuses.Add(id);
+        if (campuses.Count == 0) return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
+        await using var transaction = Database.CurrentTransaction is null ? await Database.BeginTransactionAsync(cancellationToken) : null;
+        // Serialize eligibility-affecting writes per campus so concurrent recalculations cannot leave an old gate value.
+        foreach (var campusId in campuses.Order())
+            await Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Campuses\" WHERE \"Id\" = {campusId} FOR UPDATE", cancellationToken);
+        var count = await base.SaveChangesAsync(false, cancellationToken);
+        foreach (var campusId in campuses)
+        {
+            var campus = await Campuses.AsNoTracking().SingleOrDefaultAsync(c => c.Id == campusId, cancellationToken);
+            if (campus is null) continue;
+            var readiness = await LaunchEligibility.CalculateAsync(this, campus.Id, campus.RequiredAmbassadorsForLaunch,
+                campus.RequiredVouchesPerAmbassador, cancellationToken);
+            await Campuses.Where(c => c.Id == campusId).ExecuteUpdateAsync(s => s
+                .SetProperty(c => c.LaunchReadinessScore, readiness.LaunchReadinessPercentage)
+                .SetProperty(c => c.IsSoftLaunchUnlocked, readiness.IsGatePassed), cancellationToken);
+            var tracked = ChangeTracker.Entries<Campus>().SingleOrDefault(e => e.Entity.Id == campusId);
+            if (tracked is not null)
+            {
+                tracked.Entity.LaunchReadinessScore = readiness.LaunchReadinessPercentage;
+                tracked.Entity.IsSoftLaunchUnlocked = readiness.IsGatePassed;
+            }
+        }
+        if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        if (acceptAllChangesOnSuccess) ChangeTracker.AcceptAllChanges();
+        return count;
     }
 
     private void PrepareProtectedData()
@@ -59,6 +86,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Campus> Campuses => Set<Campus>();
     public DbSet<User> Users => Set<User>();
     public DbSet<AmbassadorInvite> AmbassadorInvites => Set<AmbassadorInvite>();
+    public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<VouchRecord> Vouches => Set<VouchRecord>();
     public DbSet<DailyMatch> Matches => Set<DailyMatch>();
     public DbSet<DailyReflection> Reflections => Set<DailyReflection>();
@@ -264,8 +292,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         modelBuilder.Entity<AmbassadorInvite>(builder =>
         {
             builder.HasKey(i => i.Id);
-            builder.HasIndex(i => i.Token).IsUnique();
-            builder.Property(i => i.Token).HasMaxLength(128).IsRequired();
+            builder.HasIndex(i => i.TokenHash).IsUnique();
+            builder.Property(i => i.TokenHash).HasMaxLength(64).IsRequired();
             builder.Property(i => i.IntendedEmail).HasMaxLength(120);
             builder.Property(i => i.IntendedEmailLookupHash).HasMaxLength(64);
 
@@ -273,6 +301,16 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
                 .WithMany()
                 .HasForeignKey(i => i.CampusId)
                 .OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<EmailVerification>(builder =>
+        {
+            builder.HasKey(v => v.Id);
+            builder.HasIndex(v => v.TokenHash).IsUnique();
+            builder.HasIndex(v => v.UserId).IsUnique(); // one current challenge per user
+            builder.Property(v => v.TokenHash).HasMaxLength(64).IsRequired();
+            builder.Property(v => v.EmailLookupHash).HasMaxLength(64).IsRequired();
+            builder.HasOne(v => v.User).WithMany().HasForeignKey(v => v.UserId).OnDelete(DeleteBehavior.Cascade);
         });
 
         foreach (var column in ProtectedColumns.Strings)

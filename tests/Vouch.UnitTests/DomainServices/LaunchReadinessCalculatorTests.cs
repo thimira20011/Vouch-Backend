@@ -33,4 +33,13 @@ public class LaunchReadinessCalculatorTests
         Assert.Equal(100.0, result.LaunchReadinessPercentage);
         Assert.True(result.IsGatePassed);
     }
+
+    [Fact]
+    public void ExtraActiveAmbassadorMustAlsoQualify()
+    {
+        var result = LaunchReadinessCalculator.CalculateReadiness(31, 30);
+        Assert.False(result.IsGatePassed);
+        Assert.True(result.LaunchReadinessPercentage < 100);
+        Assert.True(LaunchReadinessCalculator.CalculateReadiness(31, 31).IsGatePassed);
+    }
 }

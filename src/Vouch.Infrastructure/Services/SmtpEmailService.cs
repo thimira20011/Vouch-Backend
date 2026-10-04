@@ -3,6 +3,7 @@ using System.Net.Mail;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Vouch.Application.Common.Interfaces;
+using Vouch.Application.Common;
 
 namespace Vouch.Infrastructure.Services;
 
@@ -20,7 +21,7 @@ namespace Vouch.Infrastructure.Services;
 ///
 /// If Smtp:Host is empty/missing the service is a no-op (development safe).
 /// </summary>
-public sealed class SmtpEmailService : IEmailService
+public sealed class SmtpEmailService : IEmailService, IVerificationEmailSender
 {
     private readonly ILogger<SmtpEmailService> _logger;
     private readonly string? _host;
@@ -38,7 +39,7 @@ public sealed class SmtpEmailService : IEmailService
         _port = int.TryParse(configuration["Smtp:Port"], out var port) ? port : 587;
         _user = configuration["Smtp:User"];
         _password = configuration["Smtp:Password"];
-        _fromAddress = configuration["Smtp:FromAddress"] ?? _user ?? "noreply@vouch.app";
+        _fromAddress = string.IsNullOrWhiteSpace(configuration["Smtp:FromAddress"]) ? _user ?? "noreply@vouch.app" : configuration["Smtp:FromAddress"]!;
 
         // Only active if a host is configured — safe no-op in local dev without SMTP
         _isConfigured = !string.IsNullOrWhiteSpace(_host)
@@ -51,6 +52,25 @@ public sealed class SmtpEmailService : IEmailService
                 "SmtpEmailService: Smtp:Host / Smtp:User / Smtp:Password not configured. " +
                 "Email sending is disabled. Set these values for production.");
         }
+    }
+
+    public async Task SendVerificationAsync(string to, string token, CancellationToken ct = default)
+    {
+        if (!_isConfigured) throw new VerificationDeliveryException();
+        try
+        {
+            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            deadline.CancelAfter(TimeSpan.FromSeconds(15));
+            using var client = new SmtpClient(_host, _port)
+            {
+                Credentials = new NetworkCredential(_user, _password), EnableSsl = true
+            };
+            using var message = new MailMessage(_fromAddress, to, "Verify your Vouch university email",
+                $"Enter this verification token in Vouch: {token}\n\nIt expires in 30 minutes. If you did not request it, ignore this email.");
+            await client.SendMailAsync(message, deadline.Token);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
+        catch (Exception) { throw new VerificationDeliveryException(); }
     }
 
     public async Task SendAsync(string to, string subject, string body, CancellationToken ct = default)

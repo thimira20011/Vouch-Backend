@@ -5,6 +5,8 @@ using Vouch.Application.Features.Vouching;
 using Vouch.Domain.Entities;
 using Vouch.Domain.Enums;
 using Vouch.Domain.Services;
+using Vouch.Infrastructure.Security;
+using Vouch.Infrastructure.Persistence;
 
 namespace Vouch.Infrastructure.Services;
 
@@ -29,6 +31,8 @@ public class TrustService : ITrustService
         SubmitVouchRequest request,
         CancellationToken ct = default)
     {
+        if (request.Traits == CharacterTrait.None || (request.Traits & ~LaunchEligibility.ValidTraits) != CharacterTrait.None)
+            throw new ArgumentException("Choose at least one valid character trait.");
         if (voucherUserId == request.TargetUserId)
         {
             throw new InvalidOperationException("You cannot vouch for yourself.");
@@ -43,6 +47,10 @@ public class TrustService : ITrustService
             .Include(u => u.VouchesReceived)
             .FirstOrDefaultAsync(u => u.Id == request.TargetUserId, ct)
             ?? throw new KeyNotFoundException("Target user not found.");
+        MemberEligibility.RequireActive(voucher);
+        if (!UniversityIdentity.IsOnboarded(target) || target.Status is not (AccountStatus.Active or AccountStatus.InIncubation) ||
+            target.CampusId != voucher.CampusId)
+            throw new Vouch.Application.Common.EligibilityException("Vouches require a verified, onboarded peer on the same campus.");
 
         // REQ-6: A single user may vouch for any given person only once
         var existingVouch = await _context.Vouches
@@ -85,29 +93,18 @@ public class TrustService : ITrustService
         target.ActiveVouchesReceivedCount += 1;
 
         // REQ-2: Incubation unlock: 3 unique vouches from active users
-        if (target.Status == AccountStatus.InIncubation && target.ActiveVouchesReceivedCount >= 3)
+        var eligibleVouches = await _context.Vouches.CountAsync(v => v.TargetUserId == target.Id &&
+            v.VoucherUserId != target.Id && v.Traits != CharacterTrait.None && (v.Traits & ~LaunchEligibility.ValidTraits) == CharacterTrait.None &&
+            v.VoucherUser.CampusId == target.CampusId && v.VoucherUser.Status == AccountStatus.Active &&
+            v.VoucherUser.EmailVerifiedAt != null && v.VoucherUser.OnboardingCompletedAt != null, ct) + 1;
+        target.ActiveVouchesReceivedCount = eligibleVouches;
+        if (target.Status == AccountStatus.InIncubation && eligibleVouches >= 3)
         {
             target.Status = AccountStatus.Active;
             target.IncubationCompletedAt = now;
         }
 
-        // REQ-A6: Persist campus launch readiness here (on vouch submission) — not on the GET dashboard read
-        var campus = await _context.Campuses.FirstOrDefaultAsync(c => c.Id == target.CampusId, ct);
-        if (campus is not null)
-        {
-            var ambassadors = await _context.Users
-                .Include(u => u.VouchesGiven)
-                .Where(u => u.CampusId == campus.Id && u.Role == UserRole.Ambassador && u.Status == AccountStatus.Active)
-                .ToListAsync(ct);
-
-            var activeAmbassadorCount = ambassadors.Count;
-            var ambassadorsMeetingVouchTarget = ambassadors.Count(a => a.VouchesGiven.Count >= campus.RequiredVouchesPerAmbassador);
-            var readiness = Vouch.Domain.Services.LaunchReadinessCalculator.CalculateReadiness(
-                activeAmbassadorCount, ambassadorsMeetingVouchTarget, campus.RequiredAmbassadorsForLaunch);
-
-            campus.LaunchReadinessScore = readiness.LaunchReadinessPercentage;
-            campus.IsSoftLaunchUnlocked = readiness.IsGatePassed;
-        }
+        // The context recalculates readiness after persisting this vouch in the same transaction.
 
         await _context.SaveChangesAsync(ct);
 

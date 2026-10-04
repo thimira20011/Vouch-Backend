@@ -15,6 +15,10 @@ public class User : BaseEntity
     public UserRole Role { get; set; } = UserRole.Seeker;
     public AccountStatus Status { get; set; } = AccountStatus.InIncubation;
     public bool HasFoundingMemberBadge { get; set; } = false;
+    public DateTimeOffset? EmailVerifiedAt { get; set; }
+    public DateTimeOffset? OnboardingCompletedAt { get; set; }
+    public Guid? AmbassadorApprovedByArchitectId { get; set; }
+    public DateTimeOffset? AmbassadorApprovedAt { get; set; }
 
     // Academic Details
     public required string Faculty { get; set; }

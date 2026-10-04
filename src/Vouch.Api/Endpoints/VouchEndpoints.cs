@@ -20,6 +20,7 @@ public static class VouchEndpoints
         })
         .AddEndpointFilter<ValidationFilter<SubmitVouchRequest>>()
         .WithName("SubmitVouch")
+        .AddEndpointFilter<EligibleMemberFilter>()
         .WithSummary("Vouch for a peer confirming character traits");
 
         group.MapGet("/me", async (ClaimsPrincipal principal, ITrustService trustService, CancellationToken ct) =>
@@ -39,6 +40,7 @@ public static class VouchEndpoints
             return Results.Ok(summary);
         })
         .WithName("GetUserTrustSummary")
+        .AddEndpointFilter<EligibleMemberFilter>()
         .WithSummary("Get public character card and verified vouches for a user");
 
         return app;

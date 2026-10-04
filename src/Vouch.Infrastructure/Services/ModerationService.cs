@@ -1,4 +1,5 @@
 using Microsoft.EntityFrameworkCore;
+using FluentValidation;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.Logging;
 using Vouch.Application.Common.Interfaces;
@@ -6,6 +7,8 @@ using Vouch.Application.Features.Moderation;
 using Vouch.Domain.Entities;
 using Vouch.Domain.Enums;
 using Vouch.Domain.Services;
+using Vouch.Infrastructure.Persistence;
+using Vouch.Infrastructure.Security;
 
 namespace Vouch.Infrastructure.Services;
 
@@ -181,20 +184,8 @@ public class ModerationService : IModerationService
             ?? throw new KeyNotFoundException("Campus not found.");
 
         // Count ambassadors and vouches (REQ-A2, REQ-A5)
-        var ambassadors = await _context.Users
-            .AsNoTracking()
-            .Where(u => u.CampusId == campusId && u.Role == UserRole.Ambassador && u.Status == AccountStatus.Active)
-            .Include(u => u.VouchesGiven)
-            .ToListAsync(ct);
-
-        var activeAmbassadorCount = ambassadors.Count;
-        var ambassadorsMeetingVouchTarget = ambassadors.Count(a => a.VouchesGiven.Count >= campus.RequiredVouchesPerAmbassador);
-
-        var readiness = LaunchReadinessCalculator.CalculateReadiness(
-            activeAmbassadorCount,
-            ambassadorsMeetingVouchTarget,
-            campus.RequiredAmbassadorsForLaunch
-        );
+        var readiness = await LaunchEligibility.CalculateAsync(_context, campusId,
+            campus.RequiredAmbassadorsForLaunch, campus.RequiredVouchesPerAmbassador, ct);
 
         // Note: campus launch readiness is calculated live here and returned to the Architect.
         // Persisting it is done only when a vouch is submitted (a state-changing event),
@@ -301,27 +292,50 @@ public class ModerationService : IModerationService
         );
     }
 
+    public async Task ApproveAmbassadorAsync(Guid architectId, Guid userId, CancellationToken ct = default)
+    {
+        var architect = await _context.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == architectId, ct);
+        var user = await _context.Users.SingleOrDefaultAsync(u => u.Id == userId, ct) ?? throw new KeyNotFoundException("User not found.");
+        if (architect is null || architect.Role != UserRole.Architect || architect.Status != AccountStatus.Active)
+            throw new Vouch.Application.Common.EligibilityException("An active Architect must approve the ambassador.");
+        if (!UniversityIdentity.IsOnboarded(user) || user.Status is not (AccountStatus.InIncubation or AccountStatus.Active))
+            throw new Vouch.Application.Common.EligibilityException("Ambassador approval requires verified onboarding and an available account.");
+        if (user.Role == UserRole.Architect) throw new ArgumentException("An Architect cannot be converted to an ambassador.");
+        user.Role = UserRole.Ambassador;
+        user.Status = AccountStatus.Active;
+        user.HasFoundingMemberBadge = true;
+        user.AmbassadorApprovedByArchitectId ??= architectId;
+        user.AmbassadorApprovedAt ??= DateTimeOffset.UtcNow;
+        user.IncubationCompletedAt ??= DateTimeOffset.UtcNow;
+        await _context.SaveChangesAsync(ct);
+        _logger.LogInformation("Ambassador manually approved. UserId={UserId} ArchitectId={ArchitectId}", userId, architectId);
+    }
+
     public async Task<AmbassadorInviteDto> CreateAmbassadorInviteAsync(
         Guid architectId,
         CreateAmbassadorInviteRequest request,
         CancellationToken ct = default)
     {
+        var architect = await _context.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == architectId, ct);
+        if (architect is null || architect.Role != UserRole.Architect || architect.Status != AccountStatus.Active)
+            throw new Vouch.Application.Common.EligibilityException("Only an active Architect may approve ambassador invitations.");
+        await new Vouch.Application.Features.Moderation.CreateAmbassadorInviteRequestValidator().ValidateAndThrowAsync(request, ct);
         var campus = await _context.Campuses
             .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == request.CampusId, ct)
             ?? throw new KeyNotFoundException($"Campus '{request.CampusId}' not found.");
 
-        // Generate cryptographically random 64-byte URL-safe token (REQ-A1)
-        var tokenBytes = System.Security.Cryptography.RandomNumberGenerator.GetBytes(64);
-        var token = Convert.ToBase64String(tokenBytes)
-            .Replace("+", "-").Replace("/", "_").Replace("=", ""); // URL-safe Base64
+        var intendedEmail = request.IntendedEmail!.Trim().ToLowerInvariant();
+        if (!UniversityIdentity.IsApprovedEmail(intendedEmail, campus.DomainPattern))
+            throw new ArgumentException("Invite email must use the selected campus's approved mailbox domain.");
+        var token = SingleUseToken.Create();
 
         var invite = new Vouch.Domain.Entities.AmbassadorInvite
         {
             CampusId = campus.Id,
             IssuedByArchitectId = architectId,
-            Token = token,
-            IntendedEmail = request.IntendedEmail,
+            TokenHash = SingleUseToken.Hash(token),
+            IntendedEmail = intendedEmail,
             ExpiresAt = DateTimeOffset.UtcNow.AddDays(7)
         };
 
@@ -330,7 +344,7 @@ public class ModerationService : IModerationService
 
         return new AmbassadorInviteDto(
             InviteId: invite.Id,
-            Token: invite.Token,
+            Token: token,
             IntendedEmail: invite.IntendedEmail,
             ExpiresAt: invite.ExpiresAt
         );

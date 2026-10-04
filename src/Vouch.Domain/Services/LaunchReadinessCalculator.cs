@@ -18,15 +18,16 @@ public static class LaunchReadinessCalculator
         int ambassadorsWithAtLeastTwoVouches,
         int requiredAmbassadors = DefaultRequiredAmbassadors)
     {
-        // 50% weight for reaching 30 ambassadors, 50% weight for each ambassador having >=2 vouches
+        if (requiredAmbassadors <= 0 || activeAmbassadors < 0 || ambassadorsWithAtLeastTwoVouches < 0 ||
+            ambassadorsWithAtLeastTwoVouches > activeAmbassadors)
+            throw new ArgumentOutOfRangeException(nameof(requiredAmbassadors));
+        // Every active ambassador must qualify, including ambassadors above the minimum cohort.
         var ambassadorRatio = Math.Min(1.0, (double)activeAmbassadors / requiredAmbassadors);
-        var vouchRatio = requiredAmbassadors > 0
-            ? Math.Min(1.0, (double)ambassadorsWithAtLeastTwoVouches / requiredAmbassadors)
-            : 0.0;
+        var vouchRatio = (double)ambassadorsWithAtLeastTwoVouches / Math.Max(requiredAmbassadors, activeAmbassadors);
 
         var readinessPercent = Math.Round((ambassadorRatio * 50.0) + (vouchRatio * 50.0), 1);
         var isGatePassed = activeAmbassadors >= requiredAmbassadors &&
-                           ambassadorsWithAtLeastTwoVouches >= requiredAmbassadors;
+                           ambassadorsWithAtLeastTwoVouches == activeAmbassadors;
 
         return new LaunchReadinessMetrics(
             ActiveAmbassadorCount: activeAmbassadors,

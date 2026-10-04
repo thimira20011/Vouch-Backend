@@ -28,8 +28,8 @@ public class CreateAmbassadorInviteRequestValidator : AbstractValidator<CreateAm
             .NotEmpty().WithMessage("Campus ID is required.");
 
         RuleFor(x => x.IntendedEmail)
+            .NotEmpty().WithMessage("An intended university email is required.")
             .EmailAddress().WithMessage("Intended email must be a valid email address.")
-            .MaximumLength(120).WithMessage("Intended email must not exceed 120 characters.")
-            .When(x => x.IntendedEmail is not null);
+            .MaximumLength(120).WithMessage("Intended email must not exceed 120 characters.");
     }
 }

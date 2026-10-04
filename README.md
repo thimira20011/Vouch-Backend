@@ -194,6 +194,10 @@ Check `http://localhost:5000/healthz` for database/schema/protected-data readine
 
 ### Configuration and deployment boundaries
 
+For university verification, curated onboarding, manual ambassador approval and launch eligibility, follow [identity and onboarding](docs/identity-and-onboarding.md). Registration creates a restricted incubation session; invited ambassadors activate only after verification/onboarding, and ordinary users also need three qualifying vouches. SMTP is required for verification: missing delivery returns 503. The new migration requires existing students to verify/onboard and legacy ambassadors to receive explicit approval.
+
+For a hosted development PostgreSQL database and later production cutover, follow [Supabase development setup](docs/supabase-development.md).
+
 `.env.example` documents CORS browser origins, optional SMTP/Anthropic configuration and photo settings. Empty SMTP host disables delivery; configure all SMTP fields before testing alerts. Empty Anthropic key uses curated fallback prompts. Local photo storage defaults to `wwwroot/photos`; Compose mounts a persistent photo volume. Photo access controls remain Step 13 work.
 
 For deployment, provide secrets through the environment or a secret manager, set the Production environment and supply real HTTPS browser origins. Complete the explicit database upgrade before starting replicas. The old `Database__SeedOnStartup` flag is no longer used. The roadmap records remaining production work. If fixed credentials from earlier versions were deployed, rotate them using the explicit reviewed admin-password operation; this implementation does not alter any live credentials or encryption keys.
