@@ -19,6 +19,7 @@ public record LoginRequest(
 );
 
 public record VerifyEmailRequest(string Token);
+public record RefreshRequest(string RefreshToken);
 public record IdentityStatusResponse(bool EmailVerified, bool OnboardingCompleted, string Status);
 
 public record CompleteOnboardingRequest(
@@ -38,7 +39,10 @@ public record AuthResponse(
     bool HasFoundingMemberBadge,
     string Token,
     bool EmailVerified = false,
-    bool OnboardingCompleted = false
+    bool OnboardingCompleted = false,
+    string? RefreshToken = null,
+    DateTimeOffset? AccessTokenExpiresAt = null,
+    DateTimeOffset? RefreshTokenExpiresAt = null
 );
 
 public interface IAuthService

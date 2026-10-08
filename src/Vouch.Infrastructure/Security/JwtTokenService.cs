@@ -17,15 +17,15 @@ public class JwtTokenService : IJwtTokenService
         _settings = JwtSettings.Read(configuration);
     }
 
-    public string GenerateToken(User user)
+    public string GenerateToken(User user, Guid? sessionId = null)
     {
         var claims = new List<Claim>
         {
             new(ClaimTypes.NameIdentifier, user.Id.ToString()),
             new(ClaimTypes.Role, user.Role.ToString()),
             new("campus_id", user.CampusId.ToString()),
-            new("status", user.Status.ToString()),
-            new("founding_member", user.HasFoundingMemberBadge.ToString().ToLowerInvariant())
+            new("sid", (sessionId ?? Guid.Empty).ToString()),
+            new(JwtRegisteredClaimNames.Jti, Guid.NewGuid().ToString())
         };
 
         var key = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(_settings.Key));
@@ -35,7 +35,7 @@ public class JwtTokenService : IJwtTokenService
             issuer: _settings.Issuer,
             audience: _settings.Audience,
             claims: claims,
-            expires: DateTime.UtcNow.AddDays(7),
+            expires: DateTime.UtcNow.AddMinutes(15),
             signingCredentials: creds
         );
 

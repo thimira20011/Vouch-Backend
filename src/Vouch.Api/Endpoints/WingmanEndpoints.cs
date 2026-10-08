@@ -20,6 +20,7 @@ public static class WingmanEndpoints
         {
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
+            await Vouch.Infrastructure.Security.ResourceAccess.RequireConversationAsync(context, userId, conversationId, ct);
 
             var conversation = await context.Conversations
                 .Include(c => c.UserA)

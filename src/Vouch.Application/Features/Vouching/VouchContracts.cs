@@ -29,5 +29,5 @@ public record TrustScoreSummaryDto(
 public interface ITrustService
 {
     Task<VouchDto> SubmitVouchAsync(Guid voucherUserId, SubmitVouchRequest request, CancellationToken ct = default);
-    Task<TrustScoreSummaryDto> GetUserTrustSummaryAsync(Guid userId, CancellationToken ct = default);
+    Task<TrustScoreSummaryDto> GetUserTrustSummaryAsync(Guid userId, CancellationToken ct = default, Guid? viewerId = null);
 }

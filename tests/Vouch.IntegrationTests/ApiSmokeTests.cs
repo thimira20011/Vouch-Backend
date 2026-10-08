@@ -197,7 +197,11 @@ public sealed class ApiSmokeTests(PostgresFixture postgres) : IAsyncLifetime
         var moderation = provider.GetRequiredService<IModerationService>();
         var report = await moderation.SubmitReportAsync(first.Id, new(second.Id, null, ReportCategory.Harassment, "Private report details"));
         Assert.Equal(first.Email, report.ReporterEmail);
-        var dashboard = await moderation.GetArchitectDashboardAsync(_campusId);
+        var architect = CreateUser("audit@test.ac.lk", "Campus Architect");
+        architect.Role = UserRole.Architect;
+        db.Users.Add(architect);
+        await db.SaveChangesAsync();
+        var dashboard = await moderation.GetArchitectDashboardAsync(_campusId, architectId: architect.Id);
         Assert.Equal(second.FullName, dashboard.CriticalReports.Single().ReportedUserName);
         Assert.Equal("Private report details", dashboard.CriticalReports.Single().Details);
         Assert.NotEmpty(dashboard.TrustScoreAnomalies);
@@ -217,11 +221,15 @@ public sealed class ApiSmokeTests(PostgresFixture postgres) : IAsyncLifetime
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", "invalid-token");
         Assert.Equal(HttpStatusCode.Unauthorized, (await client.GetAsync("/api/vouches/me")).StatusCode);
         var settings = new ConfigurationBuilder().AddInMemoryCollection(VouchApiFactory.Settings(postgres.Database.ConnectionString)).Build();
-        var token = new JwtTokenService(settings).GenerateToken(new User
+        var user = new User
         {
             CampusId = _campusId, Email = "s@test.ac.lk", PasswordHash = "unused", FullName = "Test",
             Faculty = "Test", Department = "Test", Role = UserRole.Seeker
-        });
+        };
+        await using var db = postgres.CreateContext();
+        db.Users.Add(user);
+        await db.SaveChangesAsync();
+        var token = (await new SessionService(db, new JwtTokenService(settings), TimeProvider.System).CreateAsync(user)).Token;
         client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", token);
         Assert.Equal(HttpStatusCode.Forbidden, (await client.GetAsync($"/api/architect/dashboard/{_campusId}")).StatusCode);
     }

@@ -18,21 +18,28 @@ public class ModerationService : IModerationService
     private readonly IEmailService _emailService;
     private readonly string? _architectEmail;
     private readonly ILogger<ModerationService> _logger;
+    private readonly IRealtimeConnections? _realtime;
 
     public ModerationService(
         IApplicationDbContext context,
         IEmailService emailService,
         IConfiguration configuration,
-        ILogger<ModerationService> logger)
+        ILogger<ModerationService> logger, IRealtimeConnections? realtime = null)
     {
         _context = context;
         _emailService = emailService;
         _architectEmail = configuration["Smtp:ArchitectEmail"];
         _logger = logger;
+        _realtime = realtime;
     }
 
     public async Task<ReportDto> SubmitReportAsync(Guid reporterId, CreateReportRequest request, CancellationToken ct = default)
     {
+        await ResourceAccess.RequirePeerAsync(_context, reporterId, request.ReportedUserId, safetyAction: true, ct: ct);
+        if (request.MessageId is { } messageId && !await _context.Messages.AnyAsync(m => m.Id == messageId &&
+            m.SenderId == request.ReportedUserId && (m.Conversation.UserAId == reporterId || m.Conversation.UserBId == reporterId) &&
+            m.Conversation.UserA.CampusId == m.Conversation.UserB.CampusId, ct))
+            throw new Vouch.Application.Common.EligibilityException("Reported message is unavailable.");
         var reporter = await _context.Users.FirstOrDefaultAsync(u => u.Id == reporterId, ct)
             ?? throw new KeyNotFoundException("Reporter not found.");
 
@@ -109,6 +116,7 @@ public class ModerationService : IModerationService
 
     public async Task<bool> BlockUserAsync(Guid blockerId, BlockUserRequest request, CancellationToken ct = default)
     {
+        await ResourceAccess.RequirePeerAsync(_context, blockerId, request.TargetUserId, safetyAction: true, ct: ct);
         if (blockerId == request.TargetUserId)
         {
             throw new InvalidOperationException("You cannot block yourself.");
@@ -127,6 +135,10 @@ public class ModerationService : IModerationService
             await _context.SaveChangesAsync(ct);
         }
 
+        var conversationIds = await _context.Conversations.Where(c => c.UserAId == blockerId && c.UserBId == request.TargetUserId ||
+            c.UserBId == blockerId && c.UserAId == request.TargetUserId).Select(c => c.Id).ToListAsync(ct);
+        foreach (var conversationId in conversationIds) _realtime?.RevokeConversation(conversationId);
+
         return true;
     }
 
@@ -136,6 +148,9 @@ public class ModerationService : IModerationService
             .Include(r => r.ReportedUser)
             .FirstOrDefaultAsync(r => r.Id == reportId, ct)
             ?? throw new KeyNotFoundException("Report not found.");
+        await ResourceAccess.RequireArchitectAsync(_context, architectId, report.ReportedUser.CampusId, ct);
+        if (!await _context.Users.AnyAsync(u => u.Id == report.ReporterId && u.CampusId == report.ReportedUser.CampusId, ct))
+            throw new Vouch.Application.Common.EligibilityException("Report is unavailable for this campus.");
 
         report.Status = uphold ? ReportStatus.Upheld : ReportStatus.Dismissed;
         report.ArchitectNotes = notes;
@@ -176,8 +191,9 @@ public class ModerationService : IModerationService
         return true;
     }
 
-    public async Task<ArchitectDashboardDto> GetArchitectDashboardAsync(Guid campusId, CancellationToken ct = default)
+    public async Task<ArchitectDashboardDto> GetArchitectDashboardAsync(Guid campusId, CancellationToken ct = default, Guid? architectId = null)
     {
+        await ResourceAccess.RequireArchitectAsync(_context, architectId ?? Guid.Empty, campusId, ct);
         var campus = await _context.Campuses
             .AsNoTracking()
             .FirstOrDefaultAsync(c => c.Id == campusId, ct)
@@ -198,7 +214,7 @@ public class ModerationService : IModerationService
             .AsNoTracking()
             .Include(r => r.Reporter)
             .Include(r => r.ReportedUser)
-            .Where(r => r.Status == ReportStatus.Pending)
+            .Where(r => r.Status == ReportStatus.Pending && r.ReportedUser.CampusId == campusId && r.Reporter.CampusId == campusId)
             .OrderByDescending(r => r.SeverityScore)
             .Take(20)
             .Select(r => new ReportDto(
@@ -222,7 +238,7 @@ public class ModerationService : IModerationService
 
         var velocityAnomalies = await _context.Vouches
             .AsNoTracking()
-            .Where(v => v.TargetUser.CampusId == campusId
+            .Where(v => v.TargetUser.CampusId == campusId && v.VoucherUser.CampusId == campusId
                      && v.CreatedAt >= fortyEightHoursAgo)
             .GroupBy(v => new { v.TargetUserId, v.TargetUser.FullName, v.TargetUser.Email, v.TargetUser.TrustScore, v.TargetUser.ActiveVouchesReceivedCount })
             .Where(g => g.Sum(v => v.FinalCalculatedWeight) > velocityAnomalyThreshold)
@@ -296,6 +312,7 @@ public class ModerationService : IModerationService
     {
         var architect = await _context.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == architectId, ct);
         var user = await _context.Users.SingleOrDefaultAsync(u => u.Id == userId, ct) ?? throw new KeyNotFoundException("User not found.");
+        await ResourceAccess.RequireArchitectAsync(_context, architectId, user.CampusId, ct);
         if (architect is null || architect.Role != UserRole.Architect || architect.Status != AccountStatus.Active)
             throw new Vouch.Application.Common.EligibilityException("An active Architect must approve the ambassador.");
         if (!UniversityIdentity.IsOnboarded(user) || user.Status is not (AccountStatus.InIncubation or AccountStatus.Active))
@@ -316,6 +333,7 @@ public class ModerationService : IModerationService
         CreateAmbassadorInviteRequest request,
         CancellationToken ct = default)
     {
+        await ResourceAccess.RequireArchitectAsync(_context, architectId, request.CampusId, ct);
         var architect = await _context.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == architectId, ct);
         if (architect is null || architect.Role != UserRole.Architect || architect.Status != AccountStatus.Active)
             throw new Vouch.Application.Common.EligibilityException("Only an active Architect may approve ambassador invitations.");

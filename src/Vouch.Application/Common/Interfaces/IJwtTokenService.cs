@@ -4,5 +4,5 @@ namespace Vouch.Application.Common.Interfaces;
 
 public interface IJwtTokenService
 {
-    string GenerateToken(User user);
+    string GenerateToken(User user, Guid? sessionId = null);
 }

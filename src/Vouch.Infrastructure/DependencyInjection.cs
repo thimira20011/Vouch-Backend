@@ -10,6 +10,7 @@ using Vouch.Application.Features.Vouching;
 using Vouch.Infrastructure.Persistence;
 using Vouch.Infrastructure.Security;
 using Vouch.Infrastructure.Services;
+using Vouch.Infrastructure.SignalR;
 
 namespace Vouch.Infrastructure;
 
@@ -45,6 +46,11 @@ public static class DependencyInjection
         services.AddSingleton<IEmailService, SmtpEmailService>();
         services.AddSingleton<IVerificationEmailSender, SmtpEmailService>();
         services.AddSingleton(TimeProvider.System);
+        services.AddSingleton<CampusBoundary>();
+        services.AddScoped<SessionService>();
+        services.AddSingleton<RealtimeConnections>();
+        services.AddSingleton<IRealtimeConnections>(sp => sp.GetRequiredService<RealtimeConnections>());
+        services.AddScoped<RealtimeDelivery>();
 
         // Step 21: Photo storage service (REQ-17)
         // Default: local disk under wwwroot/photos/. Override with cloud impl for production.

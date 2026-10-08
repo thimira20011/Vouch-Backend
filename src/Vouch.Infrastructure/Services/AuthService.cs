@@ -12,7 +12,7 @@ using Vouch.Infrastructure.Security;
 namespace Vouch.Infrastructure.Services;
 
 public class AuthService(ApplicationDbContext context, IPasswordHasher passwordHasher, IJwtTokenService jwtTokenService,
-    IEmailLookup emailLookup, IPhotoStorageService photoStorage, IVerificationEmailSender verificationSender, TimeProvider clock) : IAuthService
+    IEmailLookup emailLookup, IPhotoStorageService photoStorage, IVerificationEmailSender verificationSender, TimeProvider clock, CampusBoundary? boundary = null) : IAuthService
 {
     public async Task<AuthResponse> RegisterAsync(RegisterRequest request, CancellationToken ct = default)
     {
@@ -23,6 +23,7 @@ public class AuthService(ApplicationDbContext context, IPasswordHasher passwordH
             ?? throw new KeyNotFoundException("Campus not found.");
         if (!UniversityIdentity.IsApprovedEmail(normalizedEmail, campus.DomainPattern))
             throw new ArgumentException("Email must use the selected campus's approved mailbox domain.");
+        if (boundary is not null) await boundary.RequireAsync(context, campus.Id, ct);
         await using var transaction = await context.Database.BeginTransactionAsync(ct);
         await LockCampusAsync(campus.Id, ct);
         campus = await context.Campuses.AsNoTracking().SingleAsync(c => c.Id == campus.Id, ct);
@@ -61,7 +62,8 @@ public class AuthService(ApplicationDbContext context, IPasswordHasher passwordH
             { SqlState: "23505", ConstraintName: "IX_Users_EmailLookupHash" })
         { throw new InvalidOperationException("An account with this university email already exists."); }
         await transaction.CommitAsync(ct);
-        return Response(user);
+        await transaction.DisposeAsync();
+        return await new SessionService(context, jwtTokenService, clock, boundary: boundary).CreateAsync(user, ct);
     }
 
     public async Task<AuthResponse> LoginAsync(LoginRequest request, CancellationToken ct = default)
@@ -72,7 +74,7 @@ public class AuthService(ApplicationDbContext context, IPasswordHasher passwordH
         if (!passwordHasher.VerifyPassword(request.Password, user.PasswordHash))
             throw new UnauthorizedAccessException("Invalid email or password.");
         EnsureAccountUsable(user);
-        return Response(user);
+        return await new SessionService(context, jwtTokenService, clock, boundary: boundary).CreateAsync(user, ct);
     }
 
     public async Task RequestEmailVerificationAsync(Guid userId, CancellationToken ct = default)
@@ -200,7 +202,5 @@ public class AuthService(ApplicationDbContext context, IPasswordHasher passwordH
         if (user.Status is AccountStatus.Suspended or AccountStatus.DeletionRequested)
             throw new EligibilityException("This account is unavailable for authentication or onboarding.");
     }
-    private AuthResponse Response(User user) => new(user.Id, user.Email, user.FullName, user.Role.ToString(), user.Status.ToString(),
-        user.TrustScore, user.HasFoundingMemberBadge, jwtTokenService.GenerateToken(user), user.EmailVerifiedAt != null, user.OnboardingCompletedAt != null);
     private static IdentityStatusResponse Identity(User user) => new(user.EmailVerifiedAt != null, user.OnboardingCompletedAt != null, user.Status.ToString());
 }

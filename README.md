@@ -198,7 +198,9 @@ For university verification, curated onboarding, manual ambassador approval and 
 
 For a hosted development PostgreSQL database and later production cutover, follow [Supabase development setup](docs/supabase-development.md).
 
-`.env.example` documents CORS browser origins, optional SMTP/Anthropic configuration and photo settings. Empty SMTP host disables delivery; configure all SMTP fields before testing alerts. Empty Anthropic key uses curated fallback prompts. Local photo storage defaults to `wwwroot/photos`; Compose mounts a persistent photo volume. Photo access controls remain Step 13 work.
+For refresh/logout, current session checks, campus/block permissions, realtime subscriptions and authenticated photos, follow [sessions and access](docs/sessions-and-access.md). Production requires `Tenancy__CampusCode` with an isolated database and deployment per campus; Architect privileges are campus-scoped.
+
+`.env.example` documents CORS browser origins, optional SMTP/Anthropic configuration and photo settings. Empty SMTP host disables delivery; configure all SMTP fields before testing alerts. Empty Anthropic key uses curated fallback prompts. Local photo storage defaults to `wwwroot/photos`; Compose mounts a persistent photo volume. Photos require authenticated retrieval at `/photos`; durable encrypted storage and intermediate reveal variants remain Step 13 work.
 
 For deployment, provide secrets through the environment or a secret manager, set the Production environment and supply real HTTPS browser origins. Complete the explicit database upgrade before starting replicas. The old `Database__SeedOnStartup` flag is no longer used. The roadmap records remaining production work. If fixed credentials from earlier versions were deployed, rotate them using the explicit reviewed admin-password operation; this implementation does not alter any live credentials or encryption keys.
 

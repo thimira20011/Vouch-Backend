@@ -3,16 +3,19 @@ using Vouch.Application.Common.Interfaces;
 using Vouch.Domain.Entities;
 using Vouch.Domain.Enums;
 using Vouch.Infrastructure.SignalR;
+using Microsoft.EntityFrameworkCore;
 
 namespace Vouch.Infrastructure.Services;
 
 public class SlowBurnNotificationService : ISlowBurnNotificationService
 {
-    private readonly IHubContext<VouchHub> _hubContext;
+    private readonly RealtimeDelivery _delivery;
+    private readonly IApplicationDbContext _db;
 
-    public SlowBurnNotificationService(IHubContext<VouchHub> hubContext)
+    public SlowBurnNotificationService(RealtimeDelivery delivery, IApplicationDbContext db)
     {
-        _hubContext = hubContext;
+        _delivery = delivery;
+        _db = db;
     }
 
     public async Task NotifyMessageDeliveredAsync(
@@ -20,7 +23,7 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
         Message message,
         CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group($"user_{recipientUserId}").SendAsync(
+        await _delivery.SendAsync(
             "ReceiveMessage",
             new
             {
@@ -31,7 +34,7 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
                 message.DeliveredAt,
                 message.QualifiesForRevealCounter
             },
-            cancellationToken);
+            userId: recipientUserId, conversationId: message.ConversationId, ct: cancellationToken);
     }
 
     public async Task NotifyClarityStageUpdatedAsync(
@@ -39,7 +42,7 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
         RevealClarityStage newStage,
         CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group($"conv_{conversationId}").SendAsync(
+        await _delivery.SendAsync(
             "ClarityStageUpdated",
             new
             {
@@ -47,7 +50,7 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
                 ClarityStage = newStage.ToString(),
                 ClarityPercentage = (int)newStage
             },
-            cancellationToken);
+            conversationId: conversationId, subscriptionRequired: true, ct: cancellationToken);
     }
 
     public async Task NotifyConversationPausedAsync(
@@ -55,14 +58,14 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
         Guid conversationId,
         CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group($"user_{recipientUserId}").SendAsync(
+        await _delivery.SendAsync(
             "ConversationPaused",
             new
             {
                 ConversationId = conversationId,
                 Message = "Your connection has chosen to pause this conversation for now. Take your time."
             },
-            cancellationToken);
+            userId: recipientUserId, conversationId: conversationId, ct: cancellationToken);
     }
 
     public async Task NotifyConversationResumedAsync(
@@ -70,14 +73,14 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
         Guid conversationId,
         CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group($"user_{recipientUserId}").SendAsync(
+        await _delivery.SendAsync(
             "ConversationResumed",
             new
             {
                 ConversationId = conversationId,
                 Message = "The conversation has been resumed."
             },
-            cancellationToken);
+            userId: recipientUserId, conversationId: conversationId, ct: cancellationToken);
     }
 
     public async Task NotifyTrustScoreAlertToArchitectAsync(
@@ -86,7 +89,8 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
         double newScore,
         CancellationToken cancellationToken = default)
     {
-        await _hubContext.Clients.Group("architect_alerts").SendAsync(
+        var campusId = await _db.Users.Where(u => u.Id == userId).Select(u => u.CampusId).SingleOrDefaultAsync(cancellationToken);
+        await _delivery.SendAsync(
             "TrustScoreAnomalyDetected",
             new
             {
@@ -96,7 +100,7 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
                 Delta = Math.Round(newScore - oldScore, 2),
                 DetectedAt = DateTimeOffset.UtcNow
             },
-            cancellationToken);
+            architectCampusId: campusId, ct: cancellationToken);
     }
 
     /// <summary>
@@ -117,10 +121,8 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
         };
 
         // Notify both participants independently via their personal user group
-        await _hubContext.Clients.Group($"user_{userAId}").SendAsync(
-            "InactivityNudge", payload, cancellationToken);
+        await _delivery.SendAsync("InactivityNudge", payload, userId: userAId, conversationId: conversationId, ct: cancellationToken);
 
-        await _hubContext.Clients.Group($"user_{userBId}").SendAsync(
-            "InactivityNudge", payload, cancellationToken);
+        await _delivery.SendAsync("InactivityNudge", payload, userId: userBId, conversationId: conversationId, ct: cancellationToken);
     }
 }

@@ -69,7 +69,7 @@ public interface IModerationService
     Task<ReportDto> SubmitReportAsync(Guid reporterId, CreateReportRequest request, CancellationToken ct = default);
     Task<bool> BlockUserAsync(Guid blockerId, BlockUserRequest request, CancellationToken ct = default);
     Task<bool> ResolveReportAsync(Guid architectId, Guid reportId, bool uphold, string? notes, CancellationToken ct = default);
-    Task<ArchitectDashboardDto> GetArchitectDashboardAsync(Guid campusId, CancellationToken ct = default);
+    Task<ArchitectDashboardDto> GetArchitectDashboardAsync(Guid campusId, CancellationToken ct = default, Guid? architectId = null);
     Task<AmbassadorInviteDto> CreateAmbassadorInviteAsync(Guid architectId, CreateAmbassadorInviteRequest request, CancellationToken ct = default);
     Task ApproveAmbassadorAsync(Guid architectId, Guid userId, CancellationToken ct = default);
 }

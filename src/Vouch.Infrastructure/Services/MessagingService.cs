@@ -22,6 +22,7 @@ public class MessagingService : IMessagingService
 
     public async Task<MessageDto> SendMessageAsync(Guid senderId, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
     {
+        await ResourceAccess.RequireConversationAsync(_context, senderId, conversationId, ct);
         await MemberEligibility.RequireActiveAsync(_context, senderId, ct);
         var conversation = await _context.Conversations
             .Include(c => c.UserA)
@@ -113,9 +114,7 @@ public class MessagingService : IMessagingService
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
 
-        var baseQuery = _context.Conversations
-            .AsNoTracking()
-            .Where(c => c.UserAId == userId || c.UserBId == userId);
+        var baseQuery = ResourceAccess.VisibleConversations(_context, userId).AsNoTracking();
 
         var totalCount = await baseQuery.CountAsync(ct);
 
@@ -154,6 +153,7 @@ public class MessagingService : IMessagingService
 
     public async Task<PagedResult<MessageDto>> GetConversationMessagesAsync(Guid userId, Guid conversationId, int page = 1, int pageSize = 50, CancellationToken ct = default)
     {
+        await ResourceAccess.RequireConversationAsync(_context, userId, conversationId, ct);
         await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         page = Math.Max(1, page);
         pageSize = Math.Clamp(pageSize, 1, 100);
@@ -170,7 +170,7 @@ public class MessagingService : IMessagingService
 
         var baseQuery = _context.Messages
             .AsNoTracking()
-            .Where(m => m.ConversationId == conversationId);
+            .Where(m => m.ConversationId == conversationId && (m.SenderId == conversation.UserAId || m.SenderId == conversation.UserBId));
 
         var totalCount = await baseQuery.CountAsync(ct);
 
@@ -195,6 +195,7 @@ public class MessagingService : IMessagingService
 
     public async Task<bool> PauseConversationAsync(Guid userId, Guid conversationId, CancellationToken ct = default)
     {
+        await ResourceAccess.RequireConversationAsync(_context, userId, conversationId, ct);
         await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         var conversation = await _context.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId, ct)
             ?? throw new KeyNotFoundException("Conversation not found.");
@@ -218,6 +219,7 @@ public class MessagingService : IMessagingService
 
     public async Task<bool> ResumeConversationAsync(Guid userId, Guid conversationId, CancellationToken ct = default)
     {
+        await ResourceAccess.RequireConversationAsync(_context, userId, conversationId, ct);
         await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         var conversation = await _context.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId, ct)
             ?? throw new KeyNotFoundException("Conversation not found.");

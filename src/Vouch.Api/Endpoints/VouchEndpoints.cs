@@ -34,9 +34,10 @@ public static class VouchEndpoints
         .WithName("GetMyTrustSummary")
         .WithSummary("Get current user trust score, vouches received, and incubation status");
 
-        group.MapGet("/user/{userId:guid}", async (Guid userId, ITrustService trustService, CancellationToken ct) =>
+        group.MapGet("/user/{userId:guid}", async (Guid userId, ClaimsPrincipal principal, ITrustService trustService, CancellationToken ct) =>
         {
-            var summary = await trustService.GetUserTrustSummaryAsync(userId, ct);
+            var viewerId = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var summary = await trustService.GetUserTrustSummaryAsync(userId, ct, viewerId);
             return Results.Ok(summary);
         })
         .WithName("GetUserTrustSummary")

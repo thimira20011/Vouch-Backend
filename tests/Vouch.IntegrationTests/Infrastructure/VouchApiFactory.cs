@@ -11,7 +11,7 @@ using Vouch.Domain.Entities;
 
 namespace Vouch.IntegrationTests.Infrastructure;
 
-public sealed class VouchApiFactory(string connection) : WebApplicationFactory<Program>
+public sealed class VouchApiFactory(string connection, Dictionary<string, string?>? overrides = null) : WebApplicationFactory<Program>
 {
     public MutableTimeProvider Clock { get; } = new();
     public const string SigningKey = "integration-test-signing-key-only-48-characters-long";
@@ -31,9 +31,11 @@ public sealed class VouchApiFactory(string connection) : WebApplicationFactory<P
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseEnvironment("Testing");
+        var settings = Settings(connection);
+        if (overrides is not null) foreach (var setting in overrides) settings[setting.Key] = setting.Value;
         // Host settings are available while Program reads startup configuration.
-        foreach (var setting in Settings(connection)) builder.UseSetting(setting.Key, setting.Value);
-        builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(Settings(connection)));
+        foreach (var setting in settings) builder.UseSetting(setting.Key, setting.Value);
+        builder.ConfigureAppConfiguration((_, configuration) => configuration.AddInMemoryCollection(settings));
         builder.ConfigureTestServices(services =>
         {
             services.RemoveAll<IEmailService>();

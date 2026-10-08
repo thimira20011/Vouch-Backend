@@ -265,7 +265,7 @@ public sealed class IdentityAndInviteTests(PostgresFixture postgres) : IAsyncLif
         db.Vouches.Remove(await db.Vouches.FirstAsync()); await db.SaveChangesAsync();
         Assert.False((await db.Campuses.SingleAsync()).IsSoftLaunchUnlocked);
         using var scope = _factory.Services.CreateScope();
-        Assert.False((await scope.ServiceProvider.GetRequiredService<IModerationService>().GetArchitectDashboardAsync(_campusId)).LaunchReadiness.IsGatePassed);
+        Assert.False((await scope.ServiceProvider.GetRequiredService<IModerationService>().GetArchitectDashboardAsync(_campusId, architectId: _architectId)).LaunchReadiness.IsGatePassed);
     }
 
     [Fact]
@@ -297,7 +297,8 @@ public sealed class IdentityAndInviteTests(PostgresFixture postgres) : IAsyncLif
         }
         await db.SaveChangesAsync();
         using var client = Client(registered.Token);
-        Assert.Equal(HttpStatusCode.Conflict, (await client.PostAsJsonAsync("/api/auth/verification/confirm", new VerifyEmailRequest(token))).StatusCode);
+        Assert.Equal(change == "campus" ? HttpStatusCode.Unauthorized : HttpStatusCode.Conflict,
+            (await client.PostAsJsonAsync("/api/auth/verification/confirm", new VerifyEmailRequest(token))).StatusCode);
         Assert.Null((await db.Users.AsNoTracking().SingleAsync(u => u.Id == user.Id)).EmailVerifiedAt);
     }
 

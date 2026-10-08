@@ -14,11 +14,13 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     internal IEncryptionService Encryption { get; }
     private readonly IEmailLookup _emailLookup;
 
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IEncryptionService encryption, IEmailLookup emailLookup)
+    private readonly IRealtimeConnections? _realtime;
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IEncryptionService encryption, IEmailLookup emailLookup, IRealtimeConnections? realtime = null)
         : base(options)
     {
         Encryption = encryption;
         _emailLookup = emailLookup;
+        _realtime = realtime;
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
@@ -30,6 +32,10 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         PrepareProtectedData();
+        var revokedUsers = ChangeTracker.Entries<User>().Where(e => e.State == EntityState.Modified &&
+            (e.Entity.Status is not (AccountStatus.Active or AccountStatus.InIncubation) ||
+             e.Property(u => u.CampusId).IsModified || e.Property(u => u.Role).IsModified || e.Property(u => u.PasswordHash).IsModified))
+            .Select(e => e.Entity.Id).ToArray();
         var campuses = ChangeTracker.Entries<User>().Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
             .SelectMany(e => new[] { e.Entity.CampusId, e.Property(u => u.CampusId).OriginalValue }).ToHashSet();
         var changedVouches = ChangeTracker.Entries<VouchRecord>().Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted).ToArray();
@@ -42,6 +48,12 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         foreach (var campusId in campuses.Order())
             await Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Campuses\" WHERE \"Id\" = {campusId} FOR UPDATE", cancellationToken);
         var count = await base.SaveChangesAsync(false, cancellationToken);
+        if (revokedUsers.Length > 0)
+        {
+            var revokedAt = DateTimeOffset.UtcNow;
+            await AuthSessions.Where(s => revokedUsers.Contains(s.UserId) && s.RevokedAt == null)
+                .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, revokedAt), cancellationToken);
+        }
         foreach (var campusId in campuses)
         {
             var campus = await Campuses.AsNoTracking().SingleOrDefaultAsync(c => c.Id == campusId, cancellationToken);
@@ -59,6 +71,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             }
         }
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
+        foreach (var userId in revokedUsers) _realtime?.RevokeUser(userId);
         if (acceptAllChangesOnSuccess) ChangeTracker.AcceptAllChanges();
         return count;
     }
@@ -85,6 +98,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
 
     public DbSet<Campus> Campuses => Set<Campus>();
     public DbSet<User> Users => Set<User>();
+    public DbSet<AuthSession> AuthSessions => Set<AuthSession>();
+    public DbSet<RefreshToken> RefreshTokens => Set<RefreshToken>();
     public DbSet<AmbassadorInvite> AmbassadorInvites => Set<AmbassadorInvite>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<VouchRecord> Vouches => Set<VouchRecord>();
@@ -100,6 +115,17 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<AuthSession>(b =>
+        {
+            b.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(s => new { s.UserId, s.RevokedAt });
+        });
+        modelBuilder.Entity<RefreshToken>(b =>
+        {
+            b.Property(t => t.TokenHash).HasMaxLength(64).IsRequired();
+            b.HasIndex(t => t.TokenHash).IsUnique();
+            b.HasOne(t => t.Session).WithMany().HasForeignKey(t => t.SessionId).OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.Entity<ProtectionState>(builder =>
         {
             builder.HasKey(s => s.Id);

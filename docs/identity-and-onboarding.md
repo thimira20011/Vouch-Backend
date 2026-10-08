@@ -22,7 +22,7 @@ Configure `Smtp__Host`, `Smtp__Port`, `Smtp__User`, `Smtp__Password` and optiona
 
 Conditional redemption and registration share one PostgreSQL transaction. Failed persistence leaves the invite unused. Redemption records user/time, and the user records approving Architect/time. Founding badges require valid redemption or explicit approval; account activation still requires verified onboarding.
 
-Existing accounts use `POST /api/architect/ambassadors/{userId}/approve`. It requires the global Active Architect and an available, verified, onboarded student. It cannot reinstate suspended/deletion-requested accounts or convert an Architect. Repetition preserves original actor/time. Issuance and approval both support the global Architect across campuses.
+Existing accounts use `POST /api/architect/ambassadors/{userId}/approve`. It requires an Active Architect of the student's campus and an available, verified, onboarded student. It cannot reinstate suspended/deletion-requested accounts or convert an Architect. Repetition preserves original actor/time. Steps 8–9 replace the earlier global-Architect behavior with campus-scoped issuance and approval; see [sessions and access](sessions-and-access.md).
 
 ## Launch gate
 
@@ -38,4 +38,4 @@ Migration `20261004151659_SecureInvitesAndUniversityIdentity` hashes old invites
 
 Hashing is irreversible. Downgrade is refused; rollback restores the reviewed pre-upgrade backup with matching old application/configuration. Synthetic tests do not replace rehearsal with the real backup.
 
-Steps 8–9 retain session revocation, refresh-token and campus/block/resource/realtime authorization work. Steps 10–12 retain concurrent vouch counters/requests, moderation and durable delivery/deadlines. Private photos remain Step 13. Verification/onboarding checks here do not certify these later controls.
+Steps 8–9 add [sessions and access](sessions-and-access.md), including refresh/revocation, campus/block/resource checks, realtime delivery and authorized local photo retrieval. Steps 10–12 retain concurrent vouch counters/requests, moderation and durable delivery/deadlines. Durable encrypted photos and intermediate reveal variants remain Step 13; production acceptance remains Step 21.

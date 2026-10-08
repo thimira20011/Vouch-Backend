@@ -37,6 +37,7 @@ public class TrustService : ITrustService
         {
             throw new InvalidOperationException("You cannot vouch for yourself.");
         }
+        await ResourceAccess.RequirePeerAsync(_context, voucherUserId, request.TargetUserId, allowIncubation: true, ct: ct);
 
         var voucher = await _context.Users
             .Include(u => u.VouchesReceived)
@@ -132,8 +133,13 @@ public class TrustService : ITrustService
         );
     }
 
-    public async Task<TrustScoreSummaryDto> GetUserTrustSummaryAsync(Guid userId, CancellationToken ct = default)
+    public async Task<TrustScoreSummaryDto> GetUserTrustSummaryAsync(Guid userId, CancellationToken ct = default, Guid? viewerId = null)
     {
+        var viewer = viewerId ?? userId;
+        if (viewer != userId) await ResourceAccess.RequirePeerAsync(_context, viewer, userId, allowIncubation: true, ct: ct);
+        else SessionService.EnsureUsable(await _context.Users.AsNoTracking().SingleAsync(u => u.Id == userId, ct));
+        var blockedIds = await _context.Blocks.Where(b => b.BlockerId == viewer || b.BlockedUserId == viewer)
+            .Select(b => b.BlockerId == viewer ? b.BlockedUserId : b.BlockerId).ToListAsync(ct);
         var user = await _context.Users
             .AsNoTracking()
             .Include(u => u.VouchesReceived)
@@ -142,6 +148,8 @@ public class TrustService : ITrustService
             ?? throw new KeyNotFoundException("User not found.");
 
         var recentVouches = user.VouchesReceived
+            .Where(v => v.VoucherUser.CampusId == user.CampusId && !blockedIds.Contains(v.VoucherUserId) &&
+                v.VoucherUser.Status == AccountStatus.Active)
             .OrderByDescending(v => v.CreatedAt)
             .Take(10)
             .Select(v => new VouchDto(

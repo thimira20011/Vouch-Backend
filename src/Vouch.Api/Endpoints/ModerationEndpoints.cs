@@ -43,9 +43,9 @@ public static class ModerationEndpoints
             return Results.Ok(new { message = "Ambassador manually approved." });
         }).WithName("ApproveAmbassador");
 
-        architectGroup.MapGet("/dashboard/{campusId:guid}", async (Guid campusId, IModerationService moderationService, CancellationToken ct) =>
+        architectGroup.MapGet("/dashboard/{campusId:guid}", async (Guid campusId, ClaimsPrincipal principal, IModerationService moderationService, CancellationToken ct) =>
         {
-            var dashboard = await moderationService.GetArchitectDashboardAsync(campusId, ct);
+            var dashboard = await moderationService.GetArchitectDashboardAsync(campusId, ct, Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!));
             return Results.Ok(dashboard);
         })
         .WithName("GetArchitectDashboard")

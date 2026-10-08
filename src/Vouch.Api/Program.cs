@@ -21,11 +21,20 @@ if (args.Contains("--database-task", StringComparer.Ordinal))
 builder.Host.UseSerilog((context, services, logger) =>
 {
     logger.ReadFrom.Configuration(context.Configuration).Enrich.FromLogContext()
-        .Enrich.WithProperty("Application", "Vouch").WriteTo.Console();
+        .Enrich.WithProperty("Application", "Vouch")
+        // SignalR browser transports can carry access_token in the query string.
+        // Hosting request-start logs include the full URI; the request middleware logs Path only.
+        .MinimumLevel.Override("Microsoft.AspNetCore.Hosting.Diagnostics", Serilog.Events.LogEventLevel.Warning)
+        .WriteTo.Console();
     if (context.Configuration.GetValue("Logging:File:Enabled", true))
         logger.WriteTo.File("logs/vouch-.log", rollingInterval: RollingInterval.Day, retainedFileCountLimit: 14);
 });
 var useTrustedProxies = StartupConfiguration.AddTrustedProxySupport(builder.Services, builder.Configuration);
+if (builder.Environment.IsProduction() && string.IsNullOrWhiteSpace(builder.Configuration["Tenancy:CampusCode"]))
+    throw new InvalidOperationException("Production requires Tenancy:CampusCode and an isolated campus database/deployment. See docs/sessions-and-access.md.");
+var configuredPhotoUrl = builder.Configuration["PhotoStorage:BaseUrl"];
+if (!string.IsNullOrWhiteSpace(configuredPhotoUrl) && configuredPhotoUrl != "/photos")
+    throw new InvalidOperationException("PhotoStorage:BaseUrl must be /photos for authorized local photo retrieval.");
 
 // 1. Add Infrastructure Services (EF Core PostgreSQL, SignalR, Security, Domain Services)
 builder.Services.AddInfrastructure(builder.Configuration);
@@ -48,6 +57,8 @@ builder.Services.AddAuthentication(options =>
         ValidateAudience = true,
         ValidateLifetime = true,
         ValidateIssuerSigningKey = true,
+        ValidAlgorithms = [SecurityAlgorithms.HmacSha256],
+        ClockSkew = TimeSpan.Zero,
         ValidIssuer = jwtSettings.Issuer,
         ValidAudience = jwtSettings.Audience,
         IssuerSigningKey = new SymmetricSecurityKey(Encoding.UTF8.GetBytes(jwtSettings.Key))
@@ -56,6 +67,18 @@ builder.Services.AddAuthentication(options =>
     // Support SignalR authentication via query string access_token
     options.Events = new JwtBearerEvents
     {
+        OnTokenValidated = async context =>
+        {
+            try
+            {
+                var services = context.HttpContext.RequestServices;
+                var db = services.GetRequiredService<IApplicationDbContext>();
+                var user = await SessionAccess.RequireAsync(db, context.Principal!, services.GetRequiredService<TimeProvider>().GetUtcNow(), context.HttpContext.RequestAborted);
+                await services.GetRequiredService<CampusBoundary>().RequireAsync(db, user.CampusId, context.HttpContext.RequestAborted);
+            }
+            catch (Exception ex) when (ex is UnauthorizedAccessException or Vouch.Application.Common.EligibilityException)
+            { context.Fail("Session is unavailable."); }
+        },
         OnMessageReceived = context =>
         {
             var accessToken = context.Request.Query["access_token"];
@@ -103,6 +126,11 @@ builder.Services.AddValidatorsFromAssemblyContaining<RegisterRequestValidator>()
 StartupConfiguration.AddAuthRateLimiting(builder.Services);
 
 var app = builder.Build();
+if (!string.IsNullOrWhiteSpace(builder.Configuration["Tenancy:CampusCode"]))
+{
+    await using var scope = app.Services.CreateAsyncScope();
+    await scope.ServiceProvider.GetRequiredService<CampusBoundary>().VerifyDeploymentAsync(scope.ServiceProvider.GetRequiredService<IApplicationDbContext>());
+}
 
 // Schema upgrades, protected-data backfill, reference seeds and admin provisioning are explicit deployment commands.
 
@@ -119,7 +147,7 @@ if (app.Environment.IsDevelopment())
 app.UseHttpsRedirection();
 app.UseSerilogRequestLogging(); // Step 22: Structured HTTP request logging
 app.UseCors("VouchCorsPolicy");
-app.UseStaticFiles();  // Step 21: Serve /photos/* from wwwroot/photos/ (REQ-17)
+// Photos are served only by the authorized endpoint; never through public static middleware.
 app.UseAuthentication();
 app.UseRateLimiter(); // Authenticated policies partition by user; public auth routes partition by client IP.
 app.UseAuthorization();
@@ -134,7 +162,7 @@ app.MapModerationEndpoints();
 app.MapProfileEndpoints(); // Step 21: PUT /api/profile/photo (REQ-17)
 
 // 7. Map SignalR Hub
-app.MapHub<VouchHub>("/hubs/vouch");
+app.MapHub<VouchHub>("/hubs/vouch", options => options.CloseOnAuthenticationExpiration = true);
 
 // Step 12: Health check endpoint — used by Docker HEALTHCHECK and load balancer probes
 app.MapHealthChecks("/healthz");

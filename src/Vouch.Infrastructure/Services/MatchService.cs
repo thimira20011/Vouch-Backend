@@ -15,12 +15,14 @@ public class MatchService : IMatchService
     private readonly IApplicationDbContext _context;
     private readonly ILogger<MatchService> _logger;
     private readonly IMemoryCache _cache;
+    private readonly CampusBoundary? _boundary;
 
-    public MatchService(IApplicationDbContext context, ILogger<MatchService> logger, IMemoryCache cache)
+    public MatchService(IApplicationDbContext context, ILogger<MatchService> logger, IMemoryCache cache, CampusBoundary? boundary = null)
     {
         _context = context;
         _logger = logger;
         _cache = cache;
+        _boundary = boundary;
     }
 
     public async Task<TodayConnectionResponse> GetTodayConnectionAsync(Guid userId, CancellationToken ct = default)
@@ -32,8 +34,12 @@ public class MatchService : IMatchService
 
         if (_cache.TryGetValue(cacheKey, out TodayConnectionResponse? cached) && cached is not null)
         {
-            if (cached.Match is not null) await MemberEligibility.RequireActiveAsync(_context, cached.Match.MatchedUserId, ct);
-            return cached;
+            if (cached.Match is null || await ResourceAccess.CanPeerAsync(_context, userId, cached.Match.MatchedUserId, ct) &&
+                await _context.Users.CountAsync(u => (u.Id == userId || u.Id == cached.Match.MatchedUserId) && !u.IsSoftHiddenFromMatchmaking, ct) == 2 &&
+                await _context.Matches.AnyAsync(m => m.Id == cached.Match.MatchId && m.CycleDate == today &&
+                    (m.UserAId == userId && m.UserBId == cached.Match.MatchedUserId || m.UserBId == userId && m.UserAId == cached.Match.MatchedUserId) &&
+                    m.UserA.CampusId == m.CampusId && m.UserB.CampusId == m.CampusId, ct)) return cached;
+            _cache.Remove(cacheKey);
         }
 
         var user = await _context.Users
@@ -47,7 +53,12 @@ public class MatchService : IMatchService
             .AsNoTracking()
             .Include(m => m.UserA)
             .Include(m => m.UserB)
-            .FirstOrDefaultAsync(m => (m.UserAId == userId || m.UserBId == userId) && m.CycleDate == today, ct);
+            .FirstOrDefaultAsync(m => (m.UserAId == userId || m.UserBId == userId) && m.CycleDate == today &&
+                m.UserA.CampusId == m.CampusId && m.UserB.CampusId == m.CampusId &&
+                m.UserA.Status == AccountStatus.Active && m.UserB.Status == AccountStatus.Active &&
+                m.UserA.EmailVerifiedAt != null && m.UserA.OnboardingCompletedAt != null && m.UserB.EmailVerifiedAt != null && m.UserB.OnboardingCompletedAt != null &&
+                !m.UserA.IsSoftHiddenFromMatchmaking && !m.UserB.IsSoftHiddenFromMatchmaking &&
+                !_context.Blocks.Any(b => b.BlockerId == m.UserAId && b.BlockedUserId == m.UserBId || b.BlockerId == m.UserBId && b.BlockedUserId == m.UserAId), ct);
 
         if (existingMatch != null)
         {
@@ -116,6 +127,9 @@ public class MatchService : IMatchService
         await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         var match = await _context.Matches.FirstOrDefaultAsync(m => m.Id == matchId, ct)
             ?? throw new KeyNotFoundException("Match not found.");
+        if (match.UserAId != userId && match.UserBId != userId) throw new Vouch.Application.Common.EligibilityException("Match is unavailable.");
+        var peer = await ResourceAccess.RequirePeerAsync(_context, userId, match.UserAId == userId ? match.UserBId : match.UserAId, ct: ct);
+        if (peer.CampusId != match.CampusId || peer.IsSoftHiddenFromMatchmaking) throw new Vouch.Application.Common.EligibilityException("Match is unavailable.");
         await MemberEligibility.RequireActiveAsync(_context, match.UserAId, ct);
         await MemberEligibility.RequireActiveAsync(_context, match.UserBId, ct);
 
@@ -177,6 +191,7 @@ public class MatchService : IMatchService
 
     public async Task GenerateDailyMatchesForCampusAsync(Guid campusId, CancellationToken ct = default)
     {
+        if (_boundary is not null) await _boundary.RequireAsync(_context, campusId, ct);
         var today = DateOnly.FromDateTime(DateTime.UtcNow);
 
         // Active non-hidden users who are not in-incubation and not deletion requested

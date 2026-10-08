@@ -1,4 +1,5 @@
 using System.Security.Claims;
+using Microsoft.EntityFrameworkCore;
 using Vouch.Api.Middleware;
 using Vouch.Application.Features.Auth;
 
@@ -9,6 +10,36 @@ public static class AuthEndpoints
     public static IEndpointRouteBuilder MapAuthEndpoints(this IEndpointRouteBuilder app)
     {
         var group = app.MapGroup("/api/auth").WithTags("Authentication & Onboarding");
+        group.AddEndpointFilter(async (invocation, next) =>
+        {
+            if (invocation.Arguments.OfType<RegisterRequest>().FirstOrDefault() is { } registration)
+            {
+                var boundary = invocation.HttpContext.RequestServices.GetRequiredService<Vouch.Infrastructure.Security.CampusBoundary>();
+                if (!string.IsNullOrWhiteSpace(boundary.Code) && registration.CampusCode != boundary.Code)
+                    return Results.Forbid();
+            }
+            invocation.HttpContext.Response.Headers.CacheControl = "no-store";
+            return await next(invocation);
+        });
+        group.MapPost("/refresh", async (RefreshRequest request, Vouch.Infrastructure.Security.SessionService service,
+            Vouch.Infrastructure.Security.CampusBoundary boundary, Vouch.Application.Common.Interfaces.IApplicationDbContext db, CancellationToken ct) =>
+        {
+            // Refresh checks the deployment boundary before returning any credentials.
+            var response = await service.RefreshAsync(request, ct);
+            var user = await db.Users.AsNoTracking().SingleAsync(u => u.Id == response.UserId, ct);
+            await boundary.RequireAsync(db, user.CampusId, ct);
+            return Results.Ok(response);
+        }).RequireRateLimiting("auth_strict").WithName("RefreshSession");
+        group.MapPost("/logout", async (ClaimsPrincipal principal, Vouch.Infrastructure.Security.SessionService service, CancellationToken ct) =>
+        {
+            await service.LogoutAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), Guid.Parse(principal.FindFirstValue("sid")!), false, ct);
+            return Results.NoContent();
+        }).RequireAuthorization().WithName("Logout");
+        group.MapPost("/logout-all", async (ClaimsPrincipal principal, Vouch.Infrastructure.Security.SessionService service, CancellationToken ct) =>
+        {
+            await service.LogoutAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), Guid.Parse(principal.FindFirstValue("sid")!), true, ct);
+            return Results.NoContent();
+        }).RequireAuthorization().RequireRateLimiting("auth_standard").WithName("LogoutAllSessions");
 
         group.MapGet("/onboarding/options", () => Results.Ok(new
         {

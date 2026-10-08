@@ -19,8 +19,8 @@ This roadmap covers the defects identified in the review and the remaining SRS w
 | 5 | Safe database migrations, backfill and admin bootstrap | Implemented; synthetic install/upgrade checks passed; live rehearsal required |
 | 6 | Secure ambassador invite redemption | Implemented; local PostgreSQL/API regression checks passed |
 | 7 | University identity verification and onboarding eligibility | Implemented; local checks passed; real SMTP/university acceptance pending |
-| 8 | Account-state authorization and token lifecycle | Pending |
-| 9 | Campus, block and realtime resource access controls | Pending |
+| 8 | Account-state authorization and token lifecycle | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
+| 9 | Campus, block and realtime resource access controls | Implemented; adversarial checks passed; production containment acceptance remains Step 21 |
 | 10 | Correct vouch submission, counters and peer requests | Pending |
 | 11 | Correct moderation decisions and report review | Pending |
 | 12 | Durable alerts and email deadlines | Pending |
@@ -297,3 +297,20 @@ Verification:
 - Real SMTP/university verification, actual backup rehearsal, Docker/Alpine and CI acceptance remain external checks. Complete session/campus/block controls and vouch-counter concurrency remain Steps 8–10.
 
 The user additionally selected an existing Supabase project for development. [Setup and production cutover](supabase-development.md) use its Session pooler and the existing Npgsql connection setting. The supplied root certificate enabled verified TLS and successful login. Read-only inspection confirmed an empty public schema; the operator confirmed Data API was disabled. All four migrations and reference seeds were applied, preserving Supabase-managed schemas and creating no accounts. Post-install inspection was clean, and the temporary API returned HTTP 200 Healthy plus a successful onboarding-options response. Added safe connectivity error categories: seven focused privacy/diagnostic tests passed. Disposable integration tests remain isolated from the hosted project.
+
+## Steps 8–9 change record — 8 October 2026
+
+Step 8 adds persisted sessions, 15-minute access JWTs and hashed rotating refresh tokens with a fixed 30-day session lifetime. Replay revokes the whole session; logout supports the current session or all of the caller's sessions. Protected requests and hub operations use current database status, role, campus and session validity. A database trigger revokes sessions on unavailable account status or changed password/role/campus, including direct SQL updates; readiness verifies the trigger. Old JWTs without a persisted session require signing in again.
+
+Step 9 centralizes peer/conversation/Architect authorization, symmetric blocks and campus scope across matches, trust, messages, reports, invitations and Wingman. Cached suggestions recheck current permissions and the underlying match. Hub subscriptions require membership; every outbound event checks the current session and resource before delivery. Local blocked subscriptions are removed and revoked sessions disconnected. Photo URLs now require authenticated authorization, and originals require Full100 reveal. See [sessions and access](sessions-and-access.md) for the client flow and policy.
+
+The chosen production containment model uses an independent database, credentials, application keys, photo volume and API/compute deployment for each campus. Production requires `Tenancy__CampusCode`; startup/readiness reject foreign-campus private users or invites. Development remains shared for adversarial checks. The current supported realtime deployment has one API instance per campus. Actual infrastructure containment/load acceptance remains Step 21; durable encrypted photo storage and intermediate variants remain Step 13.
+
+Verification:
+
+- Full Release suite on disposable loopback PostgreSQL 17.11: **148 passed** (58 unit, 90 integration), zero failed/skipped. Release build passed with zero warnings/errors; EF reported no pending model changes.
+- Covered refresh rotation/replay/concurrency, logout isolation, expired/legacy credentials, incubation permissions, suspension/deletion/role/campus/password revocation, disabled-trigger readiness, outsiders and cross-campus resource requests, symmetric blocks, cached match invalidation, legacy foreign reports/senders, real TestServer WebSocket invocations/delivery and authenticated photo retrieval.
+- Inspected the actual Supabase development schema, reviewed the migration SQL, encrypted a public-schema backup with Windows CurrentUser DPAPI, verified decryption, restored it into a generated local database and successfully rehearsed the upgrade while preserving reference counts.
+- Applied `20261008120912_SessionsAndAccess` to Supabase development. Post-upgrade inspection recognized all five migrations with no issues/collisions/rewrites. The temporary API returned HTTP 200 `Healthy` and onboarding options, then was stopped. Supabase-managed schemas and existing reference records were preserved; no accounts were created and no production database was changed.
+
+Next implementation step: Step 10, vouch submission/counter correctness and peer requests. Real SMTP/university, Docker/Alpine and production acceptance remain the previously recorded external checks.

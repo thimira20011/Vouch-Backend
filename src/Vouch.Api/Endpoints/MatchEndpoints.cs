@@ -39,8 +39,11 @@ public static class MatchEndpoints
         .WithName("RespondToMatch")
         .WithSummary("Accept or decline today's connection");
 
-        group.MapPost("/campus/{campusId:guid}/generate-daily", async (Guid campusId, IMatchService matchService, CancellationToken ct) =>
+        group.MapPost("/campus/{campusId:guid}/generate-daily", async (Guid campusId, ClaimsPrincipal principal,
+            Vouch.Application.Common.Interfaces.IApplicationDbContext db, IMatchService matchService, CancellationToken ct) =>
         {
+            await Vouch.Infrastructure.Security.ResourceAccess.RequireArchitectAsync(db,
+                Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), campusId, ct);
             await matchService.GenerateDailyMatchesForCampusAsync(campusId, ct);
             return Results.Ok(new { message = "Daily matches generated successfully for campus." });
         })

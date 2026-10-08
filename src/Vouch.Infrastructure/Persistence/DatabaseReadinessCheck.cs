@@ -17,6 +17,8 @@ public sealed class DatabaseReadinessCheck(IServiceScopeFactory scopes) : IHealt
             await using var scope = scopes.CreateAsyncScope();
             await VerifyAsync(scope.ServiceProvider.GetRequiredService<ApplicationDbContext>(),
                 scope.ServiceProvider.GetRequiredService<IEmailLookup>(), scope.ServiceProvider.GetRequiredService<IEncryptionService>(), cancellationToken);
+            await scope.ServiceProvider.GetRequiredService<Vouch.Infrastructure.Security.CampusBoundary>()
+                .VerifyDeploymentAsync(scope.ServiceProvider.GetRequiredService<IApplicationDbContext>(), cancellationToken);
             return HealthCheckResult.Healthy();
         }
         catch (Exception ex) when (ex is not OperationCanceledException)
@@ -36,5 +38,16 @@ public sealed class DatabaseReadinessCheck(IServiceScopeFactory scopes) : IHealt
         _ = await db.Users.AsNoTracking().Select(u => u.Email).FirstOrDefaultAsync(ct);
         if (await db.Users.AnyAsync(u => u.EmailLookupHash.Length != 64, ct))
             throw new InvalidOperationException("Email lookup backfill is incomplete.");
+        await db.Database.OpenConnectionAsync(ct);
+        await using var revocation = new Npgsql.NpgsqlCommand("""
+            SELECT EXISTS (
+                SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid = t.tgfoid
+                JOIN pg_namespace n ON n.oid = p.pronamespace
+                WHERE t.tgrelid = 'public."Users"'::regclass AND t.tgname = 'vouch_revoke_changed_sessions'
+                AND NOT t.tgisinternal AND t.tgenabled IN ('O', 'A')
+                AND n.nspname = 'public' AND p.proname = 'vouch_revoke_changed_sessions')
+            """, (Npgsql.NpgsqlConnection)db.Database.GetDbConnection());
+        if (!(bool)(await revocation.ExecuteScalarAsync(ct))!)
+            throw new InvalidOperationException("The account session revocation trigger is missing or disabled.");
     }
 }

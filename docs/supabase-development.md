@@ -57,8 +57,18 @@ The reviewed fresh-install SQL is available locally at `.test-runtime/supabase-f
 
 A temporary Development API, with background jobs disabled, returned HTTP 200 `Healthy` at `/healthz` and successfully served `/api/auth/onboarding/options`. The temporary process was stopped after verification. Architect provisioning and real university verification emails still require operator credentials and SMTP configuration through the linked guides.
 
+## Development upgrade record — 8 October 2026
+
+Steps 8–9 applied `20261008120912_SessionsAndAccess` after a clean read-only inspection and review of `.test-runtime/step8-9-upgrade.sql`. Before the hosted upgrade, a public-schema backup was encrypted, decrypted and restored into a generated loopback database; the restored copy upgraded successfully with unchanged counts: four campuses, zero users/invites, six reflections and 50 icebreakers. Supabase-managed schemas were excluded from this application backup and preserved on the hosted project.
+
+The retained encrypted archive is `.test-runtime/supabase-step8-backup-d66a464c6e8c4f65a131885b8b31c0ab/source.dump.dpapi`. It is Git-ignored and protected by Windows CurrentUser DPAPI; recovery requires this Windows account's DPAPI profile/key material. Temporary plaintext dump/password files were removed. This local development rehearsal does not replace portable offsite production backups or the production recovery drills in Step 21.
+
+Post-upgrade inspection recognized all five migrations and reported no issues, collisions or rows needing rewrite. Reference records remained intact. A temporary API with workers disabled returned HTTP 200 `Healthy` and onboarding options; it was stopped after checking. No accounts were created. Keep Data API disabled. Existing clients must sign in again and implement the [refresh/logout flow](sessions-and-access.md).
+
 ## Production cutover
 
 Create a separate production database and choose its backup/retention/connection capacity for the workload. Apply the same checked-in migrations and reference seeds through explicit deployment commands; provision the production Architect securely. Configure production connection/TLS, SMTP, CORS and secret-manager values, then verify readiness and the user journey before directing clients to it.
+
+Use a separate database and deployment for each production campus, with independent credentials/application keys/storage/compute and `Tenancy__CampusCode`. See [campus containment](sessions-and-access.md#campus-containment-and-deployment) for the startup guard and remaining infrastructure acceptance checks.
 
 Prefer a clean production database without development test users. If real user data must move, rehearse a database backup/restore and carry its exact encryption ring/email lookup key with it; fresh keys cannot decrypt old ciphertext. Stop writers for the cutover, verify counts/keys/readiness and retain the source backup for rollback. Do not silently switch development infrastructure or copy Supabase-managed schemas into a different provider.

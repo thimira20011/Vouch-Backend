@@ -46,6 +46,7 @@ services:
       PhotoStorage__BaseUrl: ${PhotoStorage__BaseUrl:-/photos}
       Anthropic__ApiKey: ${Anthropic__ApiKey:-}
       BackgroundJobs__Enabled: ${BackgroundJobs__Enabled:-true}
+      Tenancy__CampusCode: ${Tenancy__CampusCode:-}
     ports:
       - "5000:8080"
     volumes:
