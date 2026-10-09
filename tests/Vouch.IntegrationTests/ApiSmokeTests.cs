@@ -174,7 +174,6 @@ public sealed class ApiSmokeTests(PostgresFixture postgres) : IAsyncLifetime
         };
         var first = CreateUser("first@test.ac.lk", "First Person");
         var second = CreateUser("second@test.ac.lk", "Second Person");
-        second.TrustScore = 20;
         db.Users.AddRange(first, second);
         var conversation = new Conversation { UserAId = first.Id, UserBId = second.Id };
         db.Conversations.Add(conversation);
@@ -194,6 +193,13 @@ public sealed class ApiSmokeTests(PostgresFixture postgres) : IAsyncLifetime
         var trust = provider.GetRequiredService<ITrustService>();
         await trust.SubmitVouchAsync(first.Id, new(second.Id, CharacterTrait.Sincere, "Private endorsement"));
         Assert.Equal(first.FullName, (await trust.GetUserTrustSummaryAsync(second.Id)).RecentVouches.Single().VoucherName);
+        // Anomalies must come from qualifying records, not an arbitrary cached score fixture.
+        var anomalyPeers = Enumerable.Range(0, 4).Select(i => CreateUser($"anomaly{i}@test.ac.lk", $"Audit peer {i}")).ToArray();
+        db.Users.AddRange(anomalyPeers);
+        await db.SaveChangesAsync();
+        db.Vouches.AddRange(anomalyPeers.Select(u => new VouchRecord { VoucherUserId = u.Id, TargetUserId = second.Id,
+            Traits = CharacterTrait.Sincere, FinalCalculatedWeight = 1, Note = "Private audit endorsement" }));
+        await db.SaveChangesAsync();
         var moderation = provider.GetRequiredService<IModerationService>();
         var report = await moderation.SubmitReportAsync(first.Id, new(second.Id, null, ReportCategory.Harassment, "Private report details"));
         Assert.Equal(first.Email, report.ReporterEmail);

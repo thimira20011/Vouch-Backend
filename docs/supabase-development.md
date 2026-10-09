@@ -65,6 +65,12 @@ The retained encrypted archive is `.test-runtime/supabase-step8-backup-d66a464c6
 
 Post-upgrade inspection recognized all five migrations and reported no issues, collisions or rows needing rewrite. Reference records remained intact. A temporary API with workers disabled returned HTTP 200 `Healthy` and onboarding options; it was stopped after checking. No accounts were created. Keep Data API disabled. Existing clients must sign in again and implement the [refresh/logout flow](sessions-and-access.md).
 
+## Development upgrade record — 10 October 2026
+
+Step 10 applied `20261009213532_ConsistentVouchesAndPeerRequests` after review of `.test-runtime/step10-upgrade.sql` and a fresh backup/restore rehearsal. The encrypted archive is `.test-runtime/supabase-step10-backup-7b7a32ab282d49b6acbb85b95ec521e1/source.dump.dpapi`, protected with Windows CurrentUser DPAPI and Git-ignored. Its decryption, local restore and upgrade from five to six migrations passed before the hosted upgrade. The same Windows-profile recovery limitation applies; retain the matching pre-upgrade application/keys for rollback.
+
+Post-upgrade inspection recognized all six migrations with no issues, collisions or rows needing rewrite. Counts remained four campuses, zero users/invites/vouches/requests, six reflections and 50 icebreakers. Supabase-managed schemas were preserved. The temporary API returned HTTP 200 `Healthy`, onboarding options 200 and anonymous access to the new request inbox 401, then was stopped. No test accounts were created. Keep Data API disabled and follow the [new request contract](vouching-and-peer-requests.md) for frontend integration.
+
 ## Production cutover
 
 Create a separate production database and choose its backup/retention/connection capacity for the workload. Apply the same checked-in migrations and reference seeds through explicit deployment commands; provision the production Architect securely. Configure production connection/TLS, SMTP, CORS and secret-manager values, then verify readiness and the user journey before directing clients to it.

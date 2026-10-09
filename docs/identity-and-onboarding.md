@@ -28,6 +28,8 @@ Existing accounts use `POST /api/architect/ambassadors/{userId}/approve`. It req
 
 At least `RequiredAmbassadorsForLaunch` (default 30) must be Active. Every Active ambassador needs verified onboarding, recorded Architect approval and `RequiredVouchesPerAmbassador` (default 2) outgoing vouches to distinct available, verified, onboarded peers on the same campus. Incubating recipients qualify; suspended/deletion-requested recipients do not. Young-account zero-weight vouches qualify for the count.
 
+Step 10 additionally excludes endorsements blocked in either direction and recomputes trust/counts alongside readiness. Incubating verified/onboarded members can use [private peer requests](vouching-and-peer-requests.md) to seek their three endorsements.
+
 Readiness assigns 50% to reaching the minimum and 50% to the qualifying fraction, using the larger of minimum and actual Active count as denominator. Tracked user/vouch writes recalculate the gate inside the same transaction with a per-campus row lock. Dashboard GET uses the same query without writing. Extra nonqualifying ambassadors, status changes and removed vouches affect the gate. Future bulk SQL paths must explicitly maintain eligibility: `ExecuteUpdate`/`ExecuteDelete` bypass the hook. Direct campus threshold changes also require recalculation.
 
 ## Upgrade and rollback

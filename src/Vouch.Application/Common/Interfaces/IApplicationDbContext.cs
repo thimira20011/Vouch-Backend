@@ -12,6 +12,7 @@ public interface IApplicationDbContext
     DbSet<AmbassadorInvite> AmbassadorInvites { get; }
     DbSet<EmailVerification> EmailVerifications { get; }
     DbSet<VouchRecord> Vouches { get; }
+    DbSet<PeerVouchRequest> VouchRequests { get; }
     DbSet<DailyMatch> Matches { get; }
     DbSet<DailyReflection> Reflections { get; }
     DbSet<Conversation> Conversations { get; }

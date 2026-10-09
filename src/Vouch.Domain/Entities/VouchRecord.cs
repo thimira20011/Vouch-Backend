@@ -19,4 +19,6 @@ public class VouchRecord : BaseEntity
     public double CliqueDampeningMultiplier { get; set; } = 1.0; // 0.5 if clique pattern detected
     public bool IsZeroWeightDueToAccountAge { get; set; } = false; // true if voucher < 14 days old
     public double FinalCalculatedWeight { get; set; } = 0.0;
+    public bool IsCliqueFlagged { get; set; }
+    public int? MutualVoucherCountAtSubmission { get; set; } // null for historical records without evidence
 }

@@ -106,6 +106,13 @@ public sealed class AccountDeletionWorker : BackgroundService
         {
             _logger.LogInformation("AccountDeletionWorker: hard-deleting user {UserId}.", userId);
 
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var campuses = await db.Users.Where(u => u.Id == userId || db.Vouches.Any(v =>
+                (v.VoucherUserId == userId || v.TargetUserId == userId) && (v.TargetUserId == u.Id || v.VoucherUserId == u.Id)))
+                .Select(u => u.CampusId).Distinct().OrderBy(id => id).ToListAsync(ct);
+            foreach (var campusId in campuses)
+                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Campuses\" WHERE \"Id\" = {campusId} FOR UPDATE", ct);
+
             // 1. Messages sent by this user (FK: Message.SenderId → User, Restrict)
             await db.Messages
                 .Where(m => m.SenderId == userId)
@@ -164,6 +171,9 @@ public sealed class AccountDeletionWorker : BackgroundService
             await db.Users
                 .Where(u => u.Id == userId)
                 .ExecuteDeleteAsync(ct);
+
+            foreach (var campusId in campuses) await db.RecalculateCampusAsync(campusId, ct);
+            await transaction.CommitAsync(ct);
 
             _logger.LogInformation("AccountDeletionWorker: user {UserId} hard-deleted successfully.", userId);
         }

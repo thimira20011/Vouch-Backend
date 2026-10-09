@@ -8,7 +8,31 @@ public static class VouchEndpoints
 {
     public static IEndpointRouteBuilder MapVouchEndpoints(this IEndpointRouteBuilder app)
     {
-        var group = app.MapGroup("/api/vouches").WithTags("Vouching & Trust Graph").RequireAuthorization();
+        var group = app.MapGroup("/api/vouches").WithTags("Vouching & Trust Graph").RequireAuthorization().RequireRateLimiting("auth_standard");
+
+        group.MapPost("/requests", async (RequestPeerVouchRequest request, ClaimsPrincipal principal, ITrustService service, CancellationToken ct) =>
+        {
+            var result = await service.RequestVouchAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), request, ct);
+            return Results.Created("/api/vouches/requests/sent", result);
+        }).AddEndpointFilter<ValidationFilter<RequestPeerVouchRequest>>().WithName("RequestPeerVouch")
+          .WithSummary("Privately request a vouch from an eligible campus peer");
+
+        group.MapGet("/requests/incoming", async (ClaimsPrincipal principal, ITrustService service, CancellationToken ct, int page = 1, int pageSize = 20) =>
+            Results.Ok(await service.GetRequestsAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), true, page, pageSize, ct)))
+            .WithName("GetIncomingVouchRequests");
+        group.MapGet("/requests/sent", async (ClaimsPrincipal principal, ITrustService service, CancellationToken ct, int page = 1, int pageSize = 20) =>
+            Results.Ok(await service.GetRequestsAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), false, page, pageSize, ct)))
+            .WithName("GetSentVouchRequests");
+        group.MapPost("/requests/{requestId:guid}/dismiss", async (Guid requestId, ClaimsPrincipal principal, ITrustService service, CancellationToken ct) =>
+        {
+            await service.ResolveRequestAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), requestId, true, ct);
+            return Results.NoContent();
+        }).WithName("DismissVouchRequest");
+        group.MapPost("/requests/{requestId:guid}/cancel", async (Guid requestId, ClaimsPrincipal principal, ITrustService service, CancellationToken ct) =>
+        {
+            await service.ResolveRequestAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), requestId, false, ct);
+            return Results.NoContent();
+        }).WithName("CancelVouchRequest");
 
         group.MapPost("/", async (SubmitVouchRequest request, ClaimsPrincipal principal, ITrustService trustService, CancellationToken ct) =>
         {

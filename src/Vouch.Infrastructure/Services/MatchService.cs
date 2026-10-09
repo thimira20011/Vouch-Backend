@@ -85,8 +85,8 @@ public class MatchService : IMatchService
             var matchResult = new TodayConnectionResponse(HasMatch: true, Match: matchDto, Reflection: null);
 
             // Step 24: Cache until midnight so repeated GETs don't re-query the DB
-            var midnightForMatch = DateTimeOffset.UtcNow.Date.AddDays(1);
-            _cache.Set(cacheKey, matchResult, midnightForMatch - DateTimeOffset.UtcNow);
+            var midnightForMatch = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1), TimeSpan.Zero);
+            _cache.Set(cacheKey, matchResult, midnightForMatch);
 
             return matchResult;
         }
@@ -115,9 +115,8 @@ public class MatchService : IMatchService
         var result = new TodayConnectionResponse(HasMatch: false, Match: null, Reflection: reflectionDto);
 
         // Cache result until midnight UTC (when the daily cycle resets)
-        var midnight = DateTimeOffset.UtcNow.Date.AddDays(1);
-        var expiry = midnight - DateTimeOffset.UtcNow;
-        _cache.Set(cacheKey, result, expiry);
+        var midnight = new DateTimeOffset(DateTime.UtcNow.Date.AddDays(1), TimeSpan.Zero);
+        _cache.Set(cacheKey, result, midnight);
 
         return result;
     }

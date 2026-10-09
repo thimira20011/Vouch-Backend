@@ -1,6 +1,7 @@
 param(
     [Parameter(Mandatory = $true)][string]$PostgresBin,
-    [int]$Port = 55432
+    [int]$Port = 55432,
+    [string]$Filter = ''
 )
 $ErrorActionPreference = 'Stop'
 $workspace = [System.IO.Path]::GetFullPath((Split-Path $PSScriptRoot -Parent))
@@ -28,7 +29,9 @@ try {
     & (Join-Path $PostgresBin 'psql.exe') -h 127.0.0.1 -p $Port -U vouch_test_runner -d postgres -v ON_ERROR_STOP=1 -c 'CREATE DATABASE vouch_test_admin;'
     if ($LASTEXITCODE -ne 0) { throw 'Could not create the dedicated test admin database.' }
     $env:VOUCH_TEST_POSTGRES_ADMIN = "Host=127.0.0.1;Port=$Port;Database=vouch_test_admin;Username=vouch_test_runner;Password=$testPassword"
-    dotnet test (Join-Path $workspace 'Vouch.slnx') --configuration Release --no-restore --verbosity minimal
+    $testArguments = @('test', (Join-Path $workspace 'Vouch.slnx'), '--configuration', 'Release', '--no-restore', '--verbosity', 'minimal')
+    if ($Filter) { $testArguments += @('--filter', $Filter) }
+    dotnet @testArguments
     $testExit = $LASTEXITCODE
 }
 finally {

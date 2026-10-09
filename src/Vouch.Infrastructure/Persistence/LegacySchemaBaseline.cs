@@ -56,8 +56,8 @@ public sealed class LegacySchemaBaseline(ApplicationDbContext db)
         var assembly = db.GetService<IMigrationsAssembly>();
         var migration = assembly.CreateMigration(assembly.Migrations[migrationId], db.Database.ProviderName!);
         var model = db.GetService<IModelRuntimeInitializer>().Initialize(migration.TargetModel, designTime: true);
-        var expected = model.GetRelationalModel().Tables.OrderBy(t => t.Name).ToArray();
-        if (!actualTables.SequenceEqual(expected.Select(t => t.Name))) return false;
+        var expected = model.GetRelationalModel().Tables.OrderBy(t => t.Name, StringComparer.Ordinal).ToArray();
+        if (!actualTables.Order(StringComparer.Ordinal).SequenceEqual(expected.Select(t => t.Name))) return false;
         foreach (var table in expected)
         {
             var columns = new Dictionary<string, (string Type, bool Nullable)>();
@@ -78,7 +78,8 @@ public sealed class LegacySchemaBaseline(ApplicationDbContext db)
                     {
                         var defaultSql = reader.GetString(3);
                         var recognized = table.Name == "Messages" && name == "Type" && defaultSql == "0" ||
-                            table.Name == "Users" && name == "EmailLookupHash" && defaultSql == "''::character varying";
+                            table.Name == "Users" && name == "EmailLookupHash" && defaultSql == "''::character varying" ||
+                            table.Name == "Vouches" && name == "IsCliqueFlagged" && defaultSql == "false";
                         if (!recognized) return false;
                     }
                 }
@@ -87,7 +88,7 @@ public sealed class LegacySchemaBaseline(ApplicationDbContext db)
             foreach (var column in table.Columns)
                 if (!columns.TryGetValue(column.Name, out var actual) || actual != (column.StoreType, column.IsNullable)) return false;
 
-            var indexes = new Dictionary<string, (bool Unique, string Columns)>();
+            var indexes = new Dictionary<string, (bool Unique, string Columns, string? Filter)>();
             await using (var count = new NpgsqlCommand("""
                 SELECT count(*) FROM pg_index i JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace
                 WHERE n.nspname = 'public' AND t.relname = @table AND NOT i.indisprimary
@@ -97,23 +98,29 @@ public sealed class LegacySchemaBaseline(ApplicationDbContext db)
                 if ((long)(await count.ExecuteScalarAsync(ct))! != table.Indexes.Count()) return false;
             }
             await using (var query = new NpgsqlCommand("""
-                SELECT ci.relname, i.indisunique, string_agg(a.attname, ',' ORDER BY k.ordinality)
+                SELECT ci.relname, i.indisunique, string_agg(a.attname, ',' ORDER BY k.ordinality), pg_get_expr(i.indpred, i.indrelid)
                 FROM pg_index i JOIN pg_class t ON t.oid = i.indrelid JOIN pg_namespace n ON n.oid = t.relnamespace
                 JOIN pg_class ci ON ci.oid = i.indexrelid
                 JOIN LATERAL unnest(i.indkey) WITH ORDINALITY k(attnum, ordinality) ON true
                 JOIN pg_attribute a ON a.attrelid = t.oid AND a.attnum = k.attnum
                 WHERE n.nspname = 'public' AND t.relname = @table AND NOT i.indisprimary
-                    AND i.indpred IS NULL AND i.indexprs IS NULL AND i.indisvalid
-                GROUP BY ci.relname, i.indisunique
+                    AND i.indexprs IS NULL AND i.indisvalid
+                GROUP BY ci.relname, i.indisunique, i.indpred, i.indrelid
                 """, connection))
             {
                 query.Parameters.AddWithValue("table", table.Name);
                 await using var reader = await query.ExecuteReaderAsync(ct);
-                while (await reader.ReadAsync(ct)) indexes[reader.GetString(0)] = (reader.GetBoolean(1), reader.GetString(2));
+                while (await reader.ReadAsync(ct)) indexes[reader.GetString(0)] = (reader.GetBoolean(1), reader.GetString(2), reader.IsDBNull(3) ? null : reader.GetString(3));
             }
             if (indexes.Count != table.Indexes.Count()) return false;
             foreach (var index in table.Indexes)
-                if (!indexes.TryGetValue(index.Name, out var actual) || actual != (index.IsUnique, string.Join(',', index.Columns.Select(c => c.Name)))) return false;
+            {
+                var filter = index.MappedIndexes.First().GetFilter();
+                // PostgreSQL prints an enclosing pair of parentheses for this reviewed partial predicate.
+                if (filter == "\"Status\" = 1") filter = "(\"Status\" = 1)";
+                if (!indexes.TryGetValue(index.Name, out var actual) || actual !=
+                    (index.IsUnique, string.Join(',', index.Columns.Select(c => c.Name)), filter)) return false;
+            }
 
             var constraints = new Dictionary<string, string>();
             await using (var query = new NpgsqlCommand("""

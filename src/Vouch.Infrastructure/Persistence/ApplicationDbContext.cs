@@ -15,12 +15,14 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     private readonly IEmailLookup _emailLookup;
 
     private readonly IRealtimeConnections? _realtime;
-    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IEncryptionService encryption, IEmailLookup emailLookup, IRealtimeConnections? realtime = null)
+    private readonly TimeProvider _clock;
+    public ApplicationDbContext(DbContextOptions<ApplicationDbContext> options, IEncryptionService encryption, IEmailLookup emailLookup, IRealtimeConnections? realtime = null, TimeProvider? clock = null)
         : base(options)
     {
         Encryption = encryption;
         _emailLookup = emailLookup;
         _realtime = realtime;
+        _clock = clock ?? TimeProvider.System;
     }
 
     protected override void OnConfiguring(DbContextOptionsBuilder optionsBuilder)
@@ -40,8 +42,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             .SelectMany(e => new[] { e.Entity.CampusId, e.Property(u => u.CampusId).OriginalValue }).ToHashSet();
         var changedVouches = ChangeTracker.Entries<VouchRecord>().Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted).ToArray();
         var voucherIds = changedVouches.SelectMany(e => new[] { e.Entity.VoucherUserId, e.Property(v => v.VoucherUserId).OriginalValue }).ToArray();
-        if (voucherIds.Length > 0)
-            foreach (var id in await Users.Where(u => voucherIds.Contains(u.Id)).Select(u => u.CampusId).Distinct().ToListAsync(cancellationToken)) campuses.Add(id);
+        var affectedIds = voucherIds.Concat(changedVouches.SelectMany(e => new[] { e.Entity.TargetUserId, e.Property(v => v.TargetUserId).OriginalValue }))
+            .Concat(ChangeTracker.Entries<Block>().Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                .SelectMany(e => new[] { e.Entity.BlockerId, e.Entity.BlockedUserId })).ToArray();
+        if (affectedIds.Length > 0)
+            foreach (var id in await Users.Where(u => affectedIds.Contains(u.Id)).Select(u => u.CampusId).Distinct().ToListAsync(cancellationToken)) campuses.Add(id);
         if (campuses.Count == 0) return await base.SaveChangesAsync(acceptAllChangesOnSuccess, cancellationToken);
         await using var transaction = Database.CurrentTransaction is null ? await Database.BeginTransactionAsync(cancellationToken) : null;
         // Serialize eligibility-affecting writes per campus so concurrent recalculations cannot leave an old gate value.
@@ -54,26 +59,30 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
             await AuthSessions.Where(s => revokedUsers.Contains(s.UserId) && s.RevokedAt == null)
                 .ExecuteUpdateAsync(s => s.SetProperty(x => x.RevokedAt, revokedAt), cancellationToken);
         }
-        foreach (var campusId in campuses)
-        {
-            var campus = await Campuses.AsNoTracking().SingleOrDefaultAsync(c => c.Id == campusId, cancellationToken);
-            if (campus is null) continue;
-            var readiness = await LaunchEligibility.CalculateAsync(this, campus.Id, campus.RequiredAmbassadorsForLaunch,
-                campus.RequiredVouchesPerAmbassador, cancellationToken);
-            await Campuses.Where(c => c.Id == campusId).ExecuteUpdateAsync(s => s
-                .SetProperty(c => c.LaunchReadinessScore, readiness.LaunchReadinessPercentage)
-                .SetProperty(c => c.IsSoftLaunchUnlocked, readiness.IsGatePassed), cancellationToken);
-            var tracked = ChangeTracker.Entries<Campus>().SingleOrDefault(e => e.Entity.Id == campusId);
-            if (tracked is not null)
-            {
-                tracked.Entity.LaunchReadinessScore = readiness.LaunchReadinessPercentage;
-                tracked.Entity.IsSoftLaunchUnlocked = readiness.IsGatePassed;
-            }
-        }
+        foreach (var campusId in campuses) await RecalculateCampusAsync(campusId, cancellationToken);
         if (transaction is not null) await transaction.CommitAsync(cancellationToken);
         foreach (var userId in revokedUsers) _realtime?.RevokeUser(userId);
         if (acceptAllChangesOnSuccess) ChangeTracker.AcceptAllChanges();
         return count;
+    }
+
+    // Caller must hold the campus row lock inside its transaction (including bulk lifecycle operations).
+    public async Task RecalculateCampusAsync(Guid campusId, CancellationToken ct = default)
+    {
+        var campus = await Campuses.AsNoTracking().SingleOrDefaultAsync(c => c.Id == campusId, ct);
+        if (campus is null) return;
+        await TrustMetrics.RecalculateAsync(this, campusId, _clock.GetUtcNow(), ct);
+        var readiness = await LaunchEligibility.CalculateAsync(this, campusId, campus.RequiredAmbassadorsForLaunch,
+            campus.RequiredVouchesPerAmbassador, ct);
+        await Campuses.Where(c => c.Id == campusId).ExecuteUpdateAsync(s => s
+            .SetProperty(c => c.LaunchReadinessScore, readiness.LaunchReadinessPercentage)
+            .SetProperty(c => c.IsSoftLaunchUnlocked, readiness.IsGatePassed), ct);
+        var tracked = ChangeTracker.Entries<Campus>().SingleOrDefault(e => e.Entity.Id == campusId);
+        if (tracked is not null)
+        {
+            tracked.Entity.LaunchReadinessScore = readiness.LaunchReadinessPercentage;
+            tracked.Entity.IsSoftLaunchUnlocked = readiness.IsGatePassed;
+        }
     }
 
     private void PrepareProtectedData()
@@ -103,6 +112,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<AmbassadorInvite> AmbassadorInvites => Set<AmbassadorInvite>();
     public DbSet<EmailVerification> EmailVerifications => Set<EmailVerification>();
     public DbSet<VouchRecord> Vouches => Set<VouchRecord>();
+    public DbSet<PeerVouchRequest> VouchRequests => Set<PeerVouchRequest>();
     public DbSet<DailyMatch> Matches => Set<DailyMatch>();
     public DbSet<DailyReflection> Reflections => Set<DailyReflection>();
     public DbSet<Conversation> Conversations => Set<Conversation>();
@@ -187,6 +197,14 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         });
 
         // VouchRecord Configuration (REQ-6: Unique pair Voucher -> Target)
+        modelBuilder.Entity<PeerVouchRequest>(b =>
+        {
+            b.HasOne(r => r.Requester).WithMany().HasForeignKey(r => r.RequesterId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(r => r.RequestedVoucher).WithMany().HasForeignKey(r => r.RequestedVoucherId).OnDelete(DeleteBehavior.Cascade);
+            b.HasIndex(r => new { r.RequesterId, r.RequestedVoucherId }).IsUnique().HasFilter("\"Status\" = 1");
+            b.HasIndex(r => new { r.RequesterId, r.CreatedAt });
+            b.HasIndex(r => new { r.RequestedVoucherId, r.CreatedAt });
+        });
         modelBuilder.Entity<VouchRecord>(builder =>
         {
             builder.HasKey(v => v.Id);

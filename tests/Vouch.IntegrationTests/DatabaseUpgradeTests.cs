@@ -55,6 +55,17 @@ public sealed class DatabaseUpgradeTests : IAsyncLifetime
         await Assert.ThrowsAsync<UnauthorizedAccessException>(() => auth.LoginAsync(new("admin@example.org", "AdminTestPassword123!")));
     }
 
+    [Fact]
+    public async Task RequestIndexPredicateDriftIsRefusedBeforeUpgrade()
+    {
+        await using var db = Context();
+        await Upgrade(db).ApplyAsync();
+        Assert.NotEmpty(await new LegacySchemaBaseline(db).IdentifyAsync());
+        await db.Database.ExecuteSqlRawAsync("DROP INDEX \"IX_VouchRequests_RequesterId_RequestedVoucherId\"; CREATE UNIQUE INDEX \"IX_VouchRequests_RequesterId_RequestedVoucherId\" ON \"VouchRequests\" (\"RequesterId\", \"RequestedVoucherId\") WHERE \"Status\" = 2;");
+        await Assert.ThrowsAsync<InvalidOperationException>(() => new LegacySchemaBaseline(db).IdentifyAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Upgrade(db).ApplyAsync(backupConfirmed: true));
+    }
+
     [Theory]
     [InlineData(LegacySchemaBaseline.Initial)]
     [InlineData(LegacySchemaBaseline.BeforeProtection)]

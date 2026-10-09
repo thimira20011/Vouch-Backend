@@ -21,7 +21,7 @@ This roadmap covers the defects identified in the review and the remaining SRS w
 | 7 | University identity verification and onboarding eligibility | Implemented; local checks passed; real SMTP/university acceptance pending |
 | 8 | Account-state authorization and token lifecycle | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
 | 9 | Campus, block and realtime resource access controls | Implemented; adversarial checks passed; production containment acceptance remains Step 21 |
-| 10 | Correct vouch submission, counters and peer requests | Pending |
+| 10 | Correct vouch submission, counters and peer requests | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
 | 11 | Correct moderation decisions and report review | Pending |
 | 12 | Durable alerts and email deadlines | Pending |
 | 13 | Private durable photos and staged reveal | Pending |
@@ -314,3 +314,19 @@ Verification:
 - Applied `20261008120912_SessionsAndAccess` to Supabase development. Post-upgrade inspection recognized all five migrations with no issues/collisions/rewrites. The temporary API returned HTTP 200 `Healthy` and onboarding options, then was stopped. Supabase-managed schemas and existing reference records were preserved; no accounts were created and no production database was changed.
 
 Next implementation step: Step 10, vouch submission/counter correctness and peer requests. Real SMTP/university, Docker/Alpine and production acceptance remain the previously recorded external checks.
+
+## Step 10 change record — 10 October 2026
+
+Vouch submission now validates nonzero known traits and eligible same-campus peers before persisting, with a campus lock held from the current-state check through commit. Stored qualifying records determine counts and capped scores instead of incrementing stale entities. Concurrent different vouchers preserve totals; duplicate pairs return a controlled conflict. Three distinct eligible vouchers activate incubation even with zero age weight. Original age/bonus/clique weights remain snapshots, while current status/onboarding/campus/blocks determine whether they contribute. Losing endorsements does not automatically relock an activated member.
+
+Persisted clique flags/shared-voucher counts record threshold evidence. Historical dampened records receive a flag with an unknown count instead of invented evidence. Tracked user/vouch/block changes and transactional bulk deletion reconcile trust totals and launch readiness; the explicit upgrade reconciles historical/imported records before writers resume. Peer requests add private inbox/sent history, independent voluntary endorsement, dismissal/cancellation/fulfillment, exact seven-day expiry/pair cooldown, five new requests per rolling day and ten live pending requests. Pending uniqueness, campus locking and the authenticated HTTP rate limit prevent concurrent retries from bypassing controls. See [vouching and peer requests](vouching-and-peer-requests.md).
+
+Verification:
+
+- Full Release suite on disposable PostgreSQL 17.11: **176 passed** (58 unit, 118 integration), zero failed/skipped. Release build passed with zero warnings/errors; publish passed and excluded local secrets; EF confirmed no pending model changes.
+- Covered concurrent different/duplicate submissions, self/foreign/unverified/blocked peers, invalid traits, exact 14-day/bonus/clique boundaries, frozen zero weights, cap/removal correctness, lifecycle metrics, private request ownership/pagination, persistent rolling and pending limits, cooldown/expiry, fulfillment rollback under an injected database failure, and relational account cleanup.
+- Upgrade tests cover strict partial-index predicates and schema drift. Corrected inspector table ordering to compare names independently of server collation. A timezone bug discovered by existing match tests received a narrow UTC cache-expiration correction; Step 16's scheduler/cycle/cache redesign remains pending.
+- Reviewed migration SQL, took a fresh encrypted Supabase public-schema backup, verified decryption, restored it to a generated loopback database and rehearsed the upgrade. Applied the sixth migration to Supabase development; post-inspection had no issues/collisions/rewrites. Existing counts remained four campuses, six reflections and 50 icebreakers; users, invites, vouches and requests remained zero.
+- The temporary API returned HTTP 200 `Healthy`, onboarding options 200 and anonymous request inbox 401, then was stopped. No production database or application keys were changed; credentials/backups remain excluded from Git.
+
+Next implementation step: Step 11, atomic moderation decisions and complete campus report review. Durable notifications, deletion deadlines/photo cleanup, deployment performance and frontend acceptance remain their later numbered steps.

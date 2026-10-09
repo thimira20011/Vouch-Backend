@@ -34,6 +34,8 @@ dotnet restore Vouch.slnx
 
 The runner creates a fresh cluster under the ignored `.test-runtime/run-<GUID>` folder, generates a password, binds to loopback on port 55432, runs the Release test suite and stops its own server in finally. It does not install a Windows service or use an existing cluster. If that port is occupied, pass `-Port 55433`; startup must succeed before tests can use that server. Runtime files/logs remain for investigation, and the plaintext password file is removed. Do not commit them. Use PowerShell 7.
 
+Use `-Filter 'FullyQualifiedName~VouchingTests'` for a focused regression run; omitting it runs the full suite. Filtered runs can report no matching unit tests when targeting an integration class.
+
 ## Test boundaries
 
 - The host uses the Testing environment. Development-only local JSON is ignored, startup reference-data seeding is disabled and the three business background workers are disabled.
@@ -45,6 +47,7 @@ The runner creates a fresh cluster under the ignored `.test-runtime/run-<GUID>` 
 - CI starts a dedicated disposable PostgreSQL 17 service and runs the test project. Missing test-server configuration fails clearly; it never silently falls back to SQLite or your app database.
 - Identity/invite cases cover single-use concurrent redemption, persistence rollback, strict campus domains, verified onboarding, challenge expiry/resend/reuse/identity binding and delivery failures, manual approval, and every-active-ambassador launch recalculation. Verification mail uses the recording sender, never real SMTP.
 - Session/access cases cover refresh rotation/replay/concurrency, logout, status/password/role/campus revocation, legacy/expired credentials, revocation-trigger readiness, symmetric blocks and cross-campus resources, cached-match permissions, authenticated photo retrieval, deployment containment guards and actual TestServer WebSocket invocations/outbound delivery. They never connect to Supabase.
+- Vouch/request cases cover concurrent distinct and duplicate submissions, nonzero traits, exact age/bonus/clique thresholds and persisted evidence, cap/removal correctness, eligibility/block recalculation, zero-weight activation, private request lifecycle and pagination, persistent rolling/daily/pending limits, transactional rollback and bulk cleanup. Upgrade tests also reject a changed request-index predicate.
 
 To run just the unit suite without PostgreSQL:
 

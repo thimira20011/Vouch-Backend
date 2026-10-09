@@ -131,7 +131,7 @@ public class AuthService(ApplicationDbContext context, IPasswordHasher passwordH
             .ExecuteUpdateAsync(s => s.SetProperty(v => v.UsedAt, now), ct);
         if (consumed != 1) throw new InvalidOperationException("The verification token is invalid or has expired.");
         user.EmailVerifiedAt = now;
-        await ActivateIfEligibleAsync(user, now, ct);
+        ActivateApprovedAmbassador(user, now);
         await context.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         return Identity(user);
@@ -152,20 +152,17 @@ public class AuthService(ApplicationDbContext context, IPasswordHasher passwordH
         user.IntellectualInterests = request.IntellectualInterests.ToList();
         var now = clock.GetUtcNow();
         user.OnboardingCompletedAt ??= now;
-        await ActivateIfEligibleAsync(user, now, ct);
+        ActivateApprovedAmbassador(user, now);
         await context.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
     }
 
-    private async Task ActivateIfEligibleAsync(User user, DateTimeOffset now, CancellationToken ct)
+    private static void ActivateApprovedAmbassador(User user, DateTimeOffset now)
     {
         if (user.Status != AccountStatus.InIncubation || !UniversityIdentity.IsOnboarded(user)) return;
         var approvedAmbassador = user.Role == UserRole.Ambassador && user.AmbassadorApprovedByArchitectId != null && user.AmbassadorApprovedAt != null;
-        var eligibleVouches = await context.Vouches.CountAsync(v => v.TargetUserId == user.Id && v.VoucherUser.CampusId == user.CampusId &&
-            v.VoucherUserId != user.Id && v.Traits != CharacterTrait.None && (v.Traits & ~LaunchEligibility.ValidTraits) == CharacterTrait.None &&
-            v.VoucherUser.Status == AccountStatus.Active && v.VoucherUser.EmailVerifiedAt != null && v.VoucherUser.OnboardingCompletedAt != null, ct);
-        user.ActiveVouchesReceivedCount = eligibleVouches;
-        if (approvedAmbassador || eligibleVouches >= 3)
+        // Ordinary three-peer activation is recalculated after persistence under the campus lock.
+        if (approvedAmbassador)
         {
             user.Status = AccountStatus.Active;
             user.IncubationCompletedAt ??= now;

@@ -27,7 +27,16 @@ public sealed class DatabaseUpgrade(ApplicationDbContext db, AesEncryptionServic
                 throw new InvalidOperationException("Existing databases require --backup-confirmed true after a verified backup/restore rehearsal.");
             if (untracked) await baseline.AdoptAsync(identified, ct);
             await db.Database.MigrateAsync(ct);
-            return await upgrade.RunAsync(apply: true, rotateLookupKey: rotateLookupKey, ct: ct);
+            var result = await upgrade.RunAsync(apply: true, rotateLookupKey: rotateLookupKey, ct: ct);
+            await using var transaction = await db.Database.BeginTransactionAsync(ct);
+            var campuses = await db.Campuses.AsNoTracking().Select(c => c.Id).OrderBy(id => id).ToListAsync(ct);
+            foreach (var campusId in campuses)
+            {
+                await db.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Campuses\" WHERE \"Id\" = {campusId} FOR UPDATE", ct);
+                await db.RecalculateCampusAsync(campusId, ct);
+            }
+            await transaction.CommitAsync(ct);
+            return result;
         }
         finally
         {

@@ -19,7 +19,9 @@ public static class LaunchEligibility
             db.Vouches.Count(v => v.VoucherUserId == u.Id && v.TargetUserId != u.Id && v.Traits != CharacterTrait.None &&
                 (v.Traits & ~ValidTraits) == CharacterTrait.None && v.TargetUser.CampusId == campusId &&
                 v.TargetUser.EmailVerifiedAt != null && v.TargetUser.OnboardingCompletedAt != null &&
-                (v.TargetUser.Status == AccountStatus.Active || v.TargetUser.Status == AccountStatus.InIncubation)) >= requiredVouches, ct);
+                (v.TargetUser.Status == AccountStatus.Active || v.TargetUser.Status == AccountStatus.InIncubation) &&
+                !db.Blocks.Any(b => b.BlockerId == v.VoucherUserId && b.BlockedUserId == v.TargetUserId ||
+                                   b.BlockerId == v.TargetUserId && b.BlockedUserId == v.VoucherUserId)) >= requiredVouches, ct);
         return LaunchReadinessCalculator.CalculateReadiness(active, qualified, requiredAmbassadors);
     }
 }
