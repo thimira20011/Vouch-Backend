@@ -18,6 +18,7 @@ public interface IApplicationDbContext
     DbSet<Conversation> Conversations { get; }
     DbSet<Message> Messages { get; }
     DbSet<Report> Reports { get; }
+    DbSet<ModerationAudit> ModerationAudits { get; }
     DbSet<Block> Blocks { get; }
     DbSet<IcebreakerPrompt> Icebreakers { get; }
 

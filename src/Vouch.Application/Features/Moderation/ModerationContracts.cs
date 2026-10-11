@@ -1,5 +1,6 @@
 using Vouch.Domain.Enums;
 using Vouch.Domain.Services;
+using Vouch.Domain.Entities;
 
 namespace Vouch.Application.Features.Moderation;
 
@@ -24,7 +25,11 @@ public record ReportDto(
     string Details,
     int SeverityScore,
     ReportStatus Status,
-    DateTimeOffset CreatedAt
+    DateTimeOffset CreatedAt,
+    Guid? RelatedMessageId = null,
+    Guid? ResolvedByArchitectId = null,
+    DateTimeOffset? ResolvedAt = null,
+    string? ArchitectNotes = null
 );
 
 public record ArchitectDashboardDto(
@@ -51,6 +56,15 @@ public record TrustScoreAnomalyDto(
 );
 
 public record ResolveReportBody(bool Uphold, string? Notes);
+public record AccountModerationBody(string Reason);
+public record ReportPage(IReadOnlyList<ReportDto> Items, int TotalCount, int Page, int PageSize);
+public record ReportEvidenceDto(ReportDto Report, bool MessageEvidenceAvailable, string? MessageBody);
+public record ModerationAuditDto(Guid Id, Guid ArchitectId, Guid? ReportId, ModerationAction Action,
+    AccountStatus PreviousStatus, AccountStatus ResultingStatus, string Reason, DateTimeOffset CreatedAt);
+public record AccountModerationReviewDto(Guid UserId, string FullName, AccountStatus Status,
+    AccountStatus? StatusBeforeSuspension, DateTimeOffset? SuspendedAt, int UpheldReportsCount,
+    int UpheldReportsIn90Days, int PendingReportsCount, IReadOnlyList<ModerationAuditDto> Audit,
+    int TotalAuditCount, int Page, int PageSize);
 
 public record CreateAmbassadorInviteRequest(
     Guid CampusId,
@@ -72,4 +86,9 @@ public interface IModerationService
     Task<ArchitectDashboardDto> GetArchitectDashboardAsync(Guid campusId, CancellationToken ct = default, Guid? architectId = null);
     Task<AmbassadorInviteDto> CreateAmbassadorInviteAsync(Guid architectId, CreateAmbassadorInviteRequest request, CancellationToken ct = default);
     Task ApproveAmbassadorAsync(Guid architectId, Guid userId, CancellationToken ct = default);
+    Task<ReportPage> GetReportsAsync(Guid architectId, Guid campusId, ReportStatus status = ReportStatus.Pending,
+        int page = 1, int pageSize = 20, CancellationToken ct = default);
+    Task<ReportEvidenceDto> GetReportAsync(Guid architectId, Guid reportId, CancellationToken ct = default);
+    Task<AccountModerationReviewDto> GetAccountReviewAsync(Guid architectId, Guid userId, int page = 1, int pageSize = 20, CancellationToken ct = default);
+    Task ChangeSuspensionAsync(Guid architectId, Guid userId, bool reinstate, AccountModerationBody body, CancellationToken ct = default);
 }

@@ -6,6 +6,8 @@ Steps 8–9 add `20261008120912_SessionsAndAccess`: persisted sessions, refresh-
 
 Step 10 adds `20261009213532_ConsistentVouchesAndPeerRequests`: private request history and clique evidence. Review [vouching and peer requests](vouching-and-peer-requests.md). The explicit upgrade also recomputes campus trust totals, incubation activation and launch readiness under campus locks; migration-only SQL does not perform that reconciliation. The API must remain stopped until the complete command succeeds. Use the same reviewed command after operator bulk identity/vouch/block changes that bypass the tracked persistence hooks.
 
+Step 11 adds `20261011065511_AuditedModerationReview`: encrypted audit reasons, deciding-Architect IDs and previous suspension state. Review [moderation review](moderation-review.md), including the resolution-time 90-day rule and legacy timestamp fallback. The explicit upgrade also reconciles lifetime upheld totals and visibility from current scoped reports. It preserves existing suspensions and does not invent historical actors, prior states or audit records. Use the reviewed command after operator bulk report changes as well.
+
 Updated 10 October 2026. These operations are explicit deployment tasks. API startup never creates schemas, migrates, backfills, seeds or creates privileged accounts. `/healthz` checks the migration history, conversion marker, lookup-key verification, encryption canary, an email read, the enabled session-revocation trigger and configured campus containment; a PostgreSQL ping alone is insufficient. The root endpoint points to readiness rather than declaring the database operational.
 
 ## Configuration

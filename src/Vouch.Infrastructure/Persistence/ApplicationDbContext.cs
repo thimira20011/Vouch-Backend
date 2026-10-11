@@ -34,6 +34,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public override async Task<int> SaveChangesAsync(bool acceptAllChangesOnSuccess, CancellationToken cancellationToken = default)
     {
         PrepareProtectedData();
+        if (ChangeTracker.Entries<ModerationAudit>().Any(e => e.State is EntityState.Modified or EntityState.Deleted))
+            throw new InvalidOperationException("Moderation audit entries cannot be edited through the application.");
         var revokedUsers = ChangeTracker.Entries<User>().Where(e => e.State == EntityState.Modified &&
             (e.Entity.Status is not (AccountStatus.Active or AccountStatus.InIncubation) ||
              e.Property(u => u.CampusId).IsModified || e.Property(u => u.Role).IsModified || e.Property(u => u.PasswordHash).IsModified))
@@ -43,6 +45,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         var changedVouches = ChangeTracker.Entries<VouchRecord>().Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted).ToArray();
         var voucherIds = changedVouches.SelectMany(e => new[] { e.Entity.VoucherUserId, e.Property(v => v.VoucherUserId).OriginalValue }).ToArray();
         var affectedIds = voucherIds.Concat(changedVouches.SelectMany(e => new[] { e.Entity.TargetUserId, e.Property(v => v.TargetUserId).OriginalValue }))
+            .Concat(ChangeTracker.Entries<Report>().Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
+                .SelectMany(e => new[] { e.Entity.ReportedUserId, e.Property(r => r.ReportedUserId).OriginalValue }))
             .Concat(ChangeTracker.Entries<Block>().Where(e => e.State is EntityState.Added or EntityState.Modified or EntityState.Deleted)
                 .SelectMany(e => new[] { e.Entity.BlockerId, e.Entity.BlockedUserId })).ToArray();
         if (affectedIds.Length > 0)
@@ -72,6 +76,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         var campus = await Campuses.AsNoTracking().SingleOrDefaultAsync(c => c.Id == campusId, ct);
         if (campus is null) return;
         await TrustMetrics.RecalculateAsync(this, campusId, _clock.GetUtcNow(), ct);
+        await ModerationMetrics.RecalculateAsync(this, campusId, ct);
         var readiness = await LaunchEligibility.CalculateAsync(this, campusId, campus.RequiredAmbassadorsForLaunch,
             campus.RequiredVouchesPerAmbassador, ct);
         await Campuses.Where(c => c.Id == campusId).ExecuteUpdateAsync(s => s
@@ -118,6 +123,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Conversation> Conversations => Set<Conversation>();
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<Report> Reports => Set<Report>();
+    public DbSet<ModerationAudit> ModerationAudits => Set<ModerationAudit>();
     public DbSet<Block> Blocks => Set<Block>();
     public DbSet<IcebreakerPrompt> Icebreakers => Set<IcebreakerPrompt>();
     public DbSet<ProtectionState> ProtectionStates => Set<ProtectionState>();
@@ -279,6 +285,12 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         });
 
         // Report Configuration
+        modelBuilder.Entity<ModerationAudit>(b =>
+        {
+            b.HasOne(a => a.SubjectUser).WithMany().HasForeignKey(a => a.SubjectUserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(a => a.Report).WithMany().HasForeignKey(a => a.ReportId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(a => new { a.CampusId, a.SubjectUserId, a.CreatedAt });
+        });
         modelBuilder.Entity<Report>(builder =>
         {
             builder.HasKey(r => r.Id);

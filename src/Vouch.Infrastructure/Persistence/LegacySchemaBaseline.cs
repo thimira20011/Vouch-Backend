@@ -144,7 +144,12 @@ public sealed class LegacySchemaBaseline(ApplicationDbContext db)
             {
                 var definition = "FOREIGN KEY (" + string.Join(", ", foreign.Columns.Select(c => Quote(c.Name))) + ") REFERENCES " + Quote(foreign.PrincipalTable.Name)
                     + "(" + string.Join(", ", foreign.PrincipalColumns.Select(c => Quote(c.Name))) + ")";
-                if (foreign.OnDeleteAction != ReferentialAction.NoAction) definition += " ON DELETE " + foreign.OnDeleteAction.ToString().ToUpperInvariant();
+                if (foreign.OnDeleteAction != ReferentialAction.NoAction) definition += " ON DELETE " + (foreign.OnDeleteAction switch
+                {
+                    ReferentialAction.SetNull => "SET NULL",
+                    ReferentialAction.SetDefault => "SET DEFAULT",
+                    _ => foreign.OnDeleteAction.ToString().ToUpperInvariant()
+                });
                 if (!constraints.TryGetValue(foreign.Name, out var actual) || actual != definition) return false;
             }
         }

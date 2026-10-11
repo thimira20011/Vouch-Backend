@@ -42,6 +42,8 @@ public class User : BaseEntity
     // Moderation & Safety (NFR-10 to NFR-14)
     public bool IsSoftHiddenFromMatchmaking { get; set; } = false;
     public int UpheldReportsCount { get; set; } = 0;
+    public AccountStatus? StatusBeforeSuspension { get; set; }
+    public DateTimeOffset? SuspendedAt { get; set; }
 
     // Privacy & Account Deletion (NFR-6)
     public DateTimeOffset? DeletionRequestedAt { get; set; }

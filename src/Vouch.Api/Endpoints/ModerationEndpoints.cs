@@ -1,6 +1,7 @@
 using System.Security.Claims;
 using Vouch.Api.Middleware;
 using Vouch.Application.Features.Moderation;
+using Vouch.Domain.Enums;
 
 namespace Vouch.Api.Endpoints;
 
@@ -34,6 +35,36 @@ public static class ModerationEndpoints
         .WithSummary("Block user from interactions, profiles, and matches");
 
         var architectGroup = app.MapGroup("/api/architect").WithTags("The Architect (Admin)").RequireAuthorization(p => p.RequireRole("Architect"));
+        architectGroup.AddEndpointFilter(async (context, next) =>
+        {
+            context.HttpContext.Response.Headers.CacheControl = "no-store";
+            return await next(context);
+        });
+
+        architectGroup.MapGet("/campuses/{campusId:guid}/reports", async (Guid campusId, ClaimsPrincipal principal,
+            IModerationService service, CancellationToken ct, ReportStatus status = ReportStatus.Pending, int page = 1, int pageSize = 20) =>
+            Results.Ok(await service.GetReportsAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), campusId, status, page, pageSize, ct)))
+            .WithName("GetCampusReports");
+
+        architectGroup.MapGet("/reports/{id:guid}", async (Guid id, ClaimsPrincipal principal, IModerationService service, CancellationToken ct) =>
+            Results.Ok(await service.GetReportAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), id, ct)))
+            .WithName("GetReportEvidence");
+
+        architectGroup.MapGet("/users/{userId:guid}/moderation", async (Guid userId, ClaimsPrincipal principal,
+            IModerationService service, CancellationToken ct, int page = 1, int pageSize = 20) =>
+            Results.Ok(await service.GetAccountReviewAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), userId, page, pageSize, ct)))
+            .WithName("GetAccountModerationReview");
+
+        foreach (var reinstate in new[] { false, true })
+        {
+            architectGroup.MapPost(reinstate ? "/users/{userId:guid}/reinstate" : "/users/{userId:guid}/suspend",
+                async (Guid userId, AccountModerationBody body, ClaimsPrincipal principal, IModerationService service, CancellationToken ct) =>
+                {
+                    await service.ChangeSuspensionAsync(Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!), userId, reinstate, body, ct);
+                    return Results.NoContent();
+                }).AddEndpointFilter<ValidationFilter<AccountModerationBody>>()
+                .WithName(reinstate ? "ReinstateAccount" : "SuspendAccount");
+        }
 
         architectGroup.MapPost("/ambassadors/{userId:guid}/approve", async (Guid userId, ClaimsPrincipal principal,
             IModerationService service, CancellationToken ct) =>
@@ -59,8 +90,9 @@ public static class ModerationEndpoints
             await moderationService.ResolveReportAsync(architectId, id, body.Uphold, body.Notes, ct);
             return Results.Ok(new { message = body.Uphold ? "Report upheld." : "Report dismissed." });
         })
+        .AddEndpointFilter<ValidationFilter<ResolveReportBody>>()
         .WithName("ResolveReport")
-        .WithSummary("Uphold or dismiss a moderation report (3 upheld triggers 90-day auto-suspension)");
+        .WithSummary("Uphold or dismiss a report (3 upheld decisions within 90 days suspend immediately)");
 
         // REQ-A1: Architect issues single-use ambassador invite tokens
         moderationGroup.MapPost("/invites", async (

@@ -20,6 +20,16 @@ public class CreateReportRequestValidator : AbstractValidator<CreateReportReques
     }
 }
 
+public class ResolveReportBodyValidator : AbstractValidator<ResolveReportBody>
+{
+    public ResolveReportBodyValidator() => RuleFor(x => x.Notes).MaximumLength(1000);
+}
+
+public class AccountModerationBodyValidator : AbstractValidator<AccountModerationBody>
+{
+    public AccountModerationBodyValidator() => RuleFor(x => x.Reason).NotEmpty().MinimumLength(10).MaximumLength(1000);
+}
+
 public class CreateAmbassadorInviteRequestValidator : AbstractValidator<CreateAmbassadorInviteRequest>
 {
     public CreateAmbassadorInviteRequestValidator()

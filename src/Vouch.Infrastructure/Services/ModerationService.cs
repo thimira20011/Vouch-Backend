@@ -12,106 +12,27 @@ using Vouch.Infrastructure.Security;
 
 namespace Vouch.Infrastructure.Services;
 
-public class ModerationService : IModerationService
+public partial class ModerationService : IModerationService
 {
-    private readonly IApplicationDbContext _context;
+    private readonly ApplicationDbContext _context;
     private readonly IEmailService _emailService;
     private readonly string? _architectEmail;
     private readonly ILogger<ModerationService> _logger;
     private readonly IRealtimeConnections? _realtime;
+    private readonly TimeProvider _clock;
 
     public ModerationService(
-        IApplicationDbContext context,
+        ApplicationDbContext context,
         IEmailService emailService,
         IConfiguration configuration,
-        ILogger<ModerationService> logger, IRealtimeConnections? realtime = null)
+        ILogger<ModerationService> logger, IRealtimeConnections? realtime = null, TimeProvider? clock = null)
     {
         _context = context;
         _emailService = emailService;
         _architectEmail = configuration["Smtp:ArchitectEmail"];
         _logger = logger;
         _realtime = realtime;
-    }
-
-    public async Task<ReportDto> SubmitReportAsync(Guid reporterId, CreateReportRequest request, CancellationToken ct = default)
-    {
-        await ResourceAccess.RequirePeerAsync(_context, reporterId, request.ReportedUserId, safetyAction: true, ct: ct);
-        if (request.MessageId is { } messageId && !await _context.Messages.AnyAsync(m => m.Id == messageId &&
-            m.SenderId == request.ReportedUserId && (m.Conversation.UserAId == reporterId || m.Conversation.UserBId == reporterId) &&
-            m.Conversation.UserA.CampusId == m.Conversation.UserB.CampusId, ct))
-            throw new Vouch.Application.Common.EligibilityException("Reported message is unavailable.");
-        var reporter = await _context.Users.FirstOrDefaultAsync(u => u.Id == reporterId, ct)
-            ?? throw new KeyNotFoundException("Reporter not found.");
-
-        var reportedUser = await _context.Users.FirstOrDefaultAsync(u => u.Id == request.ReportedUserId, ct)
-            ?? throw new KeyNotFoundException("Reported user not found.");
-
-        var severity = request.Category switch
-        {
-            ReportCategory.Harassment => 5,
-            ReportCategory.Impersonation => 5,
-            ReportCategory.InappropriateContent => 4,
-            ReportCategory.Spam => 3,
-            _ => 2
-        };
-
-        var report = new Report
-        {
-            ReporterId = reporterId,
-            ReportedUserId = request.ReportedUserId,
-            RelatedMessageId = request.MessageId,
-            Category = request.Category,
-            Details = request.Details,
-            SeverityScore = severity,
-            Status = ReportStatus.Pending
-        };
-
-        _context.Reports.Add(report);
-
-        // NFR-11: Reported profiles shall be automatically soft-hidden from matchmaking pending review
-        reportedUser.IsSoftHiddenFromMatchmaking = true;
-
-        await _context.SaveChangesAsync(ct);
-
-        // Step 22: structured logging
-        if (severity >= 4)
-            _logger.LogWarning("High-severity report submitted. Category={Category} Severity={Severity} ReporterId={ReporterId} ReportedUserId={ReportedUserId}",
-                request.Category, severity, reporterId, request.ReportedUserId);
-        else
-            _logger.LogInformation("Report submitted. Category={Category} Severity={Severity} ReporterId={ReporterId} ReportedUserId={ReportedUserId}",
-                request.Category, severity, reporterId, request.ReportedUserId);
-
-        // NFR-12: High-severity reports (>= 4) trigger an immediate email alert to the Architect
-        if (severity >= 4 && !string.IsNullOrWhiteSpace(_architectEmail))
-        {
-            var subject = $"[Vouch Alert] High-Severity Report: {request.Category} (Severity {severity}/5)";
-            var body = string.Join(Environment.NewLine,
-                "A high-severity report has been submitted on Vouch.",
-                string.Empty,
-                $"Category  : {request.Category}",
-                $"Severity  : {severity}/5",
-                $"Reporter  : {reporter.Email} (ID: {reporter.Id})",
-                $"Reported  : {reportedUser.FullName} (ID: {reportedUser.Id})",
-                $"Details   : {request.Details}",
-                $"Submitted : {DateTimeOffset.UtcNow:u}",
-                string.Empty,
-                "Please review this report in the Architect dashboard.");
-            // Fire-and-forget — SmtpEmailService never throws; failure is only logged
-            await _emailService.SendAsync(_architectEmail, subject, body, ct);
-        }
-
-        return new ReportDto(
-            Id: report.Id,
-            ReporterId: reporter.Id,
-            ReporterEmail: reporter.Email,
-            ReportedUserId: reportedUser.Id,
-            ReportedUserName: reportedUser.FullName,
-            Category: report.Category,
-            Details: report.Details,
-            SeverityScore: report.SeverityScore,
-            Status: report.Status,
-            CreatedAt: report.CreatedAt
-        );
+        _clock = clock ?? TimeProvider.System;
     }
 
     public async Task<bool> BlockUserAsync(Guid blockerId, BlockUserRequest request, CancellationToken ct = default)
@@ -142,55 +63,6 @@ public class ModerationService : IModerationService
         return true;
     }
 
-    public async Task<bool> ResolveReportAsync(Guid architectId, Guid reportId, bool uphold, string? notes, CancellationToken ct = default)
-    {
-        var report = await _context.Reports
-            .Include(r => r.ReportedUser)
-            .FirstOrDefaultAsync(r => r.Id == reportId, ct)
-            ?? throw new KeyNotFoundException("Report not found.");
-        await ResourceAccess.RequireArchitectAsync(_context, architectId, report.ReportedUser.CampusId, ct);
-        if (!await _context.Users.AnyAsync(u => u.Id == report.ReporterId && u.CampusId == report.ReportedUser.CampusId, ct))
-            throw new Vouch.Application.Common.EligibilityException("Report is unavailable for this campus.");
-
-        report.Status = uphold ? ReportStatus.Upheld : ReportStatus.Dismissed;
-        report.ArchitectNotes = notes;
-        report.ResolvedAt = DateTimeOffset.UtcNow;
-
-        if (uphold)
-        {
-            report.ReportedUser.UpheldReportsCount += 1;
-
-            // NFR-14: Three upheld reports within a 90-day window shall result in automatic account suspension
-            var ninetyDaysAgo = DateTimeOffset.UtcNow.AddDays(-90);
-            var upheldReportsCountIn90Days = await _context.Reports
-                .Where(r => r.ReportedUserId == report.ReportedUserId &&
-                            r.Status == ReportStatus.Upheld &&
-                            r.CreatedAt >= ninetyDaysAgo)
-                .CountAsync(ct);
-
-            if (upheldReportsCountIn90Days >= 3)
-            {
-                report.ReportedUser.Status = AccountStatus.Suspended;
-            }
-        }
-        else
-        {
-            // If dismissed and no other pending reports, unhide
-            var otherPending = await _context.Reports
-                .AnyAsync(r => r.ReportedUserId == report.ReportedUserId &&
-                               r.Id != reportId &&
-                               r.Status == ReportStatus.Pending, ct);
-
-            if (!otherPending)
-            {
-                report.ReportedUser.IsSoftHiddenFromMatchmaking = false;
-            }
-        }
-
-        await _context.SaveChangesAsync(ct);
-        return true;
-    }
-
     public async Task<ArchitectDashboardDto> GetArchitectDashboardAsync(Guid campusId, CancellationToken ct = default, Guid? architectId = null)
     {
         await ResourceAccess.RequireArchitectAsync(_context, architectId ?? Guid.Empty, campusId, ct);
@@ -210,12 +82,15 @@ public class ModerationService : IModerationService
         var totalActive = await _context.Users.CountAsync(u => u.CampusId == campusId && u.Status == AccountStatus.Active, ct);
         var totalIncubation = await _context.Users.CountAsync(u => u.CampusId == campusId && u.Status == AccountStatus.InIncubation, ct);
 
+        var pendingCount = await ModerationMetrics.ScopedReports(_context, campusId)
+            .CountAsync(r => r.Status == ReportStatus.Pending, ct);
         var pendingReports = await _context.Reports
             .AsNoTracking()
             .Include(r => r.Reporter)
             .Include(r => r.ReportedUser)
             .Where(r => r.Status == ReportStatus.Pending && r.ReportedUser.CampusId == campusId && r.Reporter.CampusId == campusId)
             .OrderByDescending(r => r.SeverityScore)
+            .ThenBy(r => r.CreatedAt).ThenBy(r => r.Id)
             .Take(20)
             .Select(r => new ReportDto(
                 r.Id,
@@ -302,7 +177,7 @@ public class ModerationService : IModerationService
             LaunchReadiness: readiness,
             TotalActiveUsers: totalActive,
             TotalInIncubationUsers: totalIncubation,
-            PendingReportsCount: pendingReports.Count,
+            PendingReportsCount: pendingCount,
             CriticalReports: pendingReports.Where(r => r.SeverityScore >= 4).ToList(),
             TrustScoreAnomalies: allAnomalies
         );

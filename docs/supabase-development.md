@@ -71,6 +71,12 @@ Step 10 applied `20261009213532_ConsistentVouchesAndPeerRequests` after review o
 
 Post-upgrade inspection recognized all six migrations with no issues, collisions or rows needing rewrite. Counts remained four campuses, zero users/invites/vouches/requests, six reflections and 50 icebreakers. Supabase-managed schemas were preserved. The temporary API returned HTTP 200 `Healthy`, onboarding options 200 and anonymous access to the new request inbox 401, then was stopped. No test accounts were created. Keep Data API disabled and follow the [new request contract](vouching-and-peer-requests.md) for frontend integration.
 
+## Step 11 development upgrade — 11 October 2026
+
+Applied `20261011065511_AuditedModerationReview` after reviewing `.test-runtime/step11-upgrade.sql` and verifying a fresh encrypted backup/restore rehearsal. The Git-ignored archive is `.test-runtime/supabase-step11-backup-2cb4a0523e084721aa929e632d2fcbc8/source.dump.dpapi`, protected with Windows CurrentUser DPAPI. Decryption, local restore and upgrade from six to seven migrations passed before the hosted upgrade. Recovery requires the same Windows profile's DPAPI material and the matching application keys.
+
+Post-upgrade inspection recognized seven migrations with no issues, collisions or rows needing rewrite. Counts remained four campuses, six reflections and 50 icebreakers, with zero users, invites, vouches, requests, reports and audits. The development API returned HTTP 200 `Healthy`, onboarding options 200 and anonymous Architect reports 401, then was stopped. Keep Data API disabled. The [moderation contract](moderation-review.md) documents resolution-time suspension, evidence privacy and audit/reinstatement behavior. Durable delivery remains Step 12.
+
 ## Production cutover
 
 Create a separate production database and choose its backup/retention/connection capacity for the workload. Apply the same checked-in migrations and reference seeds through explicit deployment commands; provision the production Architect securely. Configure production connection/TLS, SMTP, CORS and secret-manager values, then verify readiness and the user journey before directing clients to it.

@@ -442,6 +442,54 @@ namespace Vouch.Infrastructure.Persistence.Migrations
                     b.ToTable("Messages");
                 });
 
+            modelBuilder.Entity("Vouch.Domain.Entities.ModerationAudit", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("Action")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("ArchitectId")
+                        .HasColumnType("uuid");
+
+                    b.Property<Guid>("CampusId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int>("PreviousStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Reason")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid?>("ReportId")
+                        .HasColumnType("uuid");
+
+                    b.Property<int>("ResultingStatus")
+                        .HasColumnType("integer");
+
+                    b.Property<Guid>("SubjectUserId")
+                        .HasColumnType("uuid");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ReportId");
+
+                    b.HasIndex("SubjectUserId");
+
+                    b.HasIndex("CampusId", "SubjectUserId", "CreatedAt");
+
+                    b.ToTable("ModerationAudits");
+                });
+
             modelBuilder.Entity("Vouch.Domain.Entities.PeerVouchRequest", b =>
                 {
                     b.Property<Guid>("Id")
@@ -545,6 +593,9 @@ namespace Vouch.Infrastructure.Persistence.Migrations
 
                     b.Property<DateTimeOffset?>("ResolvedAt")
                         .HasColumnType("timestamp with time zone");
+
+                    b.Property<Guid?>("ResolvedByArchitectId")
+                        .HasColumnType("uuid");
 
                     b.Property<int>("SeverityScore")
                         .HasColumnType("integer");
@@ -656,6 +707,12 @@ namespace Vouch.Infrastructure.Persistence.Migrations
 
                     b.Property<int>("Status")
                         .HasColumnType("integer");
+
+                    b.Property<int?>("StatusBeforeSuspension")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTimeOffset?>("SuspendedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<double>("TrustScore")
                         .HasColumnType("double precision");
@@ -871,6 +928,24 @@ namespace Vouch.Infrastructure.Persistence.Migrations
                     b.Navigation("Conversation");
 
                     b.Navigation("Sender");
+                });
+
+            modelBuilder.Entity("Vouch.Domain.Entities.ModerationAudit", b =>
+                {
+                    b.HasOne("Vouch.Domain.Entities.Report", "Report")
+                        .WithMany()
+                        .HasForeignKey("ReportId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Vouch.Domain.Entities.User", "SubjectUser")
+                        .WithMany()
+                        .HasForeignKey("SubjectUserId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Report");
+
+                    b.Navigation("SubjectUser");
                 });
 
             modelBuilder.Entity("Vouch.Domain.Entities.PeerVouchRequest", b =>

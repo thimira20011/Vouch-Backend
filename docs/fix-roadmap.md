@@ -22,7 +22,7 @@ This roadmap covers the defects identified in the review and the remaining SRS w
 | 8 | Account-state authorization and token lifecycle | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
 | 9 | Campus, block and realtime resource access controls | Implemented; adversarial checks passed; production containment acceptance remains Step 21 |
 | 10 | Correct vouch submission, counters and peer requests | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
-| 11 | Correct moderation decisions and report review | Pending |
+| 11 | Correct moderation decisions and report review | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
 | 12 | Durable alerts and email deadlines | Pending |
 | 13 | Private durable photos and staged reveal | Pending |
 | 14 | Complete account deletion within its deadline | Pending |
@@ -330,3 +330,18 @@ Verification:
 - The temporary API returned HTTP 200 `Healthy`, onboarding options 200 and anonymous request inbox 401, then was stopped. No production database or application keys were changed; credentials/backups remain excluded from Git.
 
 Next implementation step: Step 11, atomic moderation decisions and complete campus report review. Durable notifications, deletion deadlines/photo cleanup, deployment performance and frontend acceptance remain their later numbered steps.
+
+## Step 11 change record — 11 October 2026
+
+Report submission and decisions now hold a campus lock through commit. Message evidence requires the reported sender and the exact reporter/reported conversation pair; archived and blocked evidence remains reportable. Identical completed decisions preserve the original actor, time, notes and audit; conflicting retries return 409. The current decision is saved before evaluating the inclusive rolling 90-day **resolution-time** window. The third qualifying upheld decision suspends immediately, stores the previous available state and revokes sessions atomically.
+
+Lifetime counts and visibility derive from current campus reports rather than increments. Final-pending resolution restores available profiles; suspended/deletion-requested accounts remain hidden. Architects have complete paginated queues, accurate dashboard totals, scoped evidence, paginated audit history and reasoned manual suspension/reinstatement. Report and audit access follows current campus membership, including participant moves. Audit reasons are encrypted and tracked edits refused. Reinstatement preserves revoked sessions and cannot reverse deletion or manually change Architect accounts. See [moderation review](moderation-review.md).
+
+Verification:
+
+- Full Release suite on disposable PostgreSQL 17.11: **205 passed** (58 unit, 147 integration), zero failed/skipped. The 29 new cases cover concurrent decisions/retries, exact window bounds, invalid/foreign evidence, large queues, campus changes, visibility, manual state restoration, encrypted audits, deletion relationships, previous-schema upgrade and injected audit failure rollback.
+- Release build passed with zero warnings/errors; publish excluded local secrets; EF confirmed no pending model changes. Reviewed regular SQL and verified idempotent migration SQL through the integration suite. Corrected a missing SQL terminator caught by that check before any hosted upgrade.
+- Verified a fresh encrypted development backup by decrypting, restoring and upgrading a generated loopback copy. Applied `20261011065511_AuditedModerationReview` to Supabase development; post-inspection recognized all seven migrations with no issues, collisions or rewrites. Existing decision times are preserved; missing legacy decision times use creation time without invented actors/history.
+- Temporary development API returned HTTP 200 `Healthy`, onboarding options 200 and anonymous Architect reports 401, then was stopped. Credentials and backup files remain excluded from Git. No production database or application keys were changed.
+
+Next implementation step: Step 12, durable alerts and email deadlines. Photo protection, deletion deadlines, deployment performance and frontend acceptance remain their later numbered steps.

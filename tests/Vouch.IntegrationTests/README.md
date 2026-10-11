@@ -49,6 +49,8 @@ Use `-Filter 'FullyQualifiedName~VouchingTests'` for a focused regression run; o
 - Session/access cases cover refresh rotation/replay/concurrency, logout, status/password/role/campus revocation, legacy/expired credentials, revocation-trigger readiness, symmetric blocks and cross-campus resources, cached-match permissions, authenticated photo retrieval, deployment containment guards and actual TestServer WebSocket invocations/outbound delivery. They never connect to Supabase.
 - Vouch/request cases cover concurrent distinct and duplicate submissions, nonzero traits, exact age/bonus/clique thresholds and persisted evidence, cap/removal correctness, eligibility/block recalculation, zero-weight activation, private request lifecycle and pagination, persistent rolling/daily/pending limits, transactional rollback and bulk cleanup. Upgrade tests also reject a changed request-index predicate.
 
+- Moderation cases cover concurrent/idempotent decisions, the inclusive resolution-time 90-day boundary, immediate third-report suspension and session revocation, final-pending visibility, complete paginated queues, current campus restrictions on reports and related audits, message evidence linkage, manual suspension/reinstatement, encrypted immutable audit reasons, relational cleanup and upgrade from the previous schema. An injected audit insert failure verifies rollback of the report, suspension, totals and database session revocation.
+
 To run just the unit suite without PostgreSQL:
 
 ```powershell

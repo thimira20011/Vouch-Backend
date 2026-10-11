@@ -20,4 +20,5 @@ public class Report : BaseEntity
     public ReportStatus Status { get; set; } = ReportStatus.Pending;
     public string? ArchitectNotes { get; set; }
     public DateTimeOffset? ResolvedAt { get; set; }
+    public Guid? ResolvedByArchitectId { get; set; }
 }
