@@ -11,6 +11,7 @@ public sealed class RealtimeConnections : IRealtimeConnections
     public sealed record Connection(HubCallerContext Context, Guid UserId, Guid SessionId, DateTimeOffset ExpiresAt)
     {
         public ConcurrentDictionary<Guid, byte> Conversations { get; } = new();
+        public Guid? ArchitectAlertCampus { get; set; }
     }
     public void Add(HubCallerContext context)
     {
@@ -22,6 +23,8 @@ public sealed class RealtimeConnections : IRealtimeConnections
     public void Remove(string id) => _connections.TryRemove(id, out _);
     public void Join(string id, Guid conversation) { if (_connections.TryGetValue(id, out var c)) c.Conversations[conversation] = 0; }
     public void Leave(string id, Guid conversation) { if (_connections.TryGetValue(id, out var c)) c.Conversations.TryRemove(conversation, out _); }
+    public void JoinArchitectAlerts(string id, Guid campus) { if (_connections.TryGetValue(id, out var c)) c.ArchitectAlertCampus = campus; }
+    public void LeaveArchitectAlerts(string id) { if (_connections.TryGetValue(id, out var c)) c.ArchitectAlertCampus = null; }
     public void RevokeUser(Guid userId) { foreach (var c in Snapshot().Where(c => c.UserId == userId)) Abort(c); }
     public void RevokeSession(Guid sessionId) { foreach (var c in Snapshot().Where(c => c.SessionId == sessionId)) Abort(c); }
     public void RevokeConversation(Guid conversationId)

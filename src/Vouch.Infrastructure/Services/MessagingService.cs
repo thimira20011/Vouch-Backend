@@ -6,22 +6,27 @@ using Vouch.Domain.Entities;
 using Vouch.Domain.Enums;
 using Vouch.Domain.Services;
 using Vouch.Infrastructure.Security;
+using Vouch.Infrastructure.Persistence;
+using Microsoft.EntityFrameworkCore.Storage;
 
 namespace Vouch.Infrastructure.Services;
 
 public class MessagingService : IMessagingService
 {
-    private readonly IApplicationDbContext _context;
+    private readonly ApplicationDbContext _context;
     private readonly ISlowBurnNotificationService _notificationService;
+    private readonly TimeProvider _clock;
 
-    public MessagingService(IApplicationDbContext context, ISlowBurnNotificationService notificationService)
+    public MessagingService(ApplicationDbContext context, ISlowBurnNotificationService notificationService, TimeProvider clock)
     {
         _context = context;
         _notificationService = notificationService;
+        _clock = clock;
     }
 
     public async Task<MessageDto> SendMessageAsync(Guid senderId, Guid conversationId, SendMessageRequest request, CancellationToken ct = default)
     {
+        await using var transaction = await LockConversationAsync(senderId, conversationId, ct);
         await ResourceAccess.RequireConversationAsync(_context, senderId, conversationId, ct);
         await MemberEligibility.RequireActiveAsync(_context, senderId, ct);
         var conversation = await _context.Conversations
@@ -67,12 +72,14 @@ public class MessagingService : IMessagingService
             Body = request.Body,
             Type = request.Type,  // Step 19: persist the message type
             QualifiesForRevealCounter = qualifiesForCounter,
-            DeliveredAt = DateTimeOffset.UtcNow
+            CreatedAt = _clock.GetUtcNow(), SentAt = _clock.GetUtcNow(), DeliveredAt = _clock.GetUtcNow()
         };
 
         _context.Messages.Add(message);
 
         conversation.LastMessageAt = message.DeliveredAt;
+        conversation.InactivityNudgeSentAt = null;
+        RevealClarityStage? changedStage = null;
         if (qualifiesForCounter)
         {
             conversation.QualifyingMessageCount += 1;
@@ -86,11 +93,13 @@ public class MessagingService : IMessagingService
             if (updatedStage != previousStage)
             {
                 conversation.CurrentClarityStage = updatedStage;
-                await _notificationService.NotifyClarityStageUpdatedAsync(conversation.Id, updatedStage, ct);
+                changedStage = updatedStage;
             }
         }
 
         await _context.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+        if (changedStage is { } stage) await _notificationService.NotifyClarityStageUpdatedAsync(conversation.Id, stage, ct);
 
         // Real-time letter delivery notification via SignalR (REQ-15)
         await _notificationService.NotifyMessageDeliveredAsync(recipientId, message, ct);
@@ -195,6 +204,7 @@ public class MessagingService : IMessagingService
 
     public async Task<bool> PauseConversationAsync(Guid userId, Guid conversationId, CancellationToken ct = default)
     {
+        await using var transaction = await LockConversationAsync(userId, conversationId, ct);
         await ResourceAccess.RequireConversationAsync(_context, userId, conversationId, ct);
         await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         var conversation = await _context.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId, ct)
@@ -210,6 +220,7 @@ public class MessagingService : IMessagingService
         conversation.PausedAt = DateTimeOffset.UtcNow;
 
         await _context.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         var recipientId = conversation.UserAId == userId ? conversation.UserBId : conversation.UserAId;
         await _notificationService.NotifyConversationPausedAsync(recipientId, conversation.Id, ct);
@@ -219,6 +230,7 @@ public class MessagingService : IMessagingService
 
     public async Task<bool> ResumeConversationAsync(Guid userId, Guid conversationId, CancellationToken ct = default)
     {
+        await using var transaction = await LockConversationAsync(userId, conversationId, ct);
         await ResourceAccess.RequireConversationAsync(_context, userId, conversationId, ct);
         await MemberEligibility.RequireActiveAsync(_context, userId, ct);
         var conversation = await _context.Conversations.FirstOrDefaultAsync(c => c.Id == conversationId, ct)
@@ -234,6 +246,7 @@ public class MessagingService : IMessagingService
         conversation.PausedAt = null;
 
         await _context.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
 
         var recipientId = conversation.UserAId == userId ? conversation.UserBId : conversation.UserAId;
         await _notificationService.NotifyConversationResumedAsync(recipientId, conversation.Id, ct);
@@ -243,14 +256,19 @@ public class MessagingService : IMessagingService
 
     public async Task ProcessInactivityChecksAsync(CancellationToken ct = default)
     {
-        var now = DateTimeOffset.UtcNow;
+        await using var transaction = await _context.Database.BeginTransactionAsync(ct);
+        var campuses = await _context.Campuses.Select(c => c.Id).OrderBy(id => id).ToListAsync(ct);
+        foreach (var campus in campuses)
+            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Campuses\" WHERE \"Id\" = {campus} FOR UPDATE", ct);
+        var current = await _context.Conversations.FromSqlRaw("SELECT * FROM \"Conversations\" WHERE \"Status\" = 1 FOR UPDATE").ToListAsync(ct);
+        var now = _clock.GetUtcNow();
         var twentyOneDaysAgo = now.AddDays(-21);
         var thirtyDaysAgo = now.AddDays(-30);
 
         // REQ-23: 30 days inactivity with no response -> archive (not delete)
-        var toArchive = await _context.Conversations
+        var toArchive = current
             .Where(c => c.Status == ConversationStatus.Active && c.LastMessageAt <= thirtyDaysAgo)
-            .ToListAsync(ct);
+            .ToList();
 
         foreach (var conv in toArchive)
         {
@@ -259,19 +277,38 @@ public class MessagingService : IMessagingService
         }
 
         // REQ-23: 21 days inactivity -> send gentle re-engagement nudge
-        var toNudge = await _context.Conversations
+        var toNudge = current
             .Where(c => c.Status == ConversationStatus.Active &&
                         c.LastMessageAt <= twentyOneDaysAgo &&
                         c.InactivityNudgeSentAt == null)
-            .ToListAsync(ct);
+            .ToList();
 
         foreach (var conv in toNudge)
         {
+            if (!await ResourceAccess.VisibleConversations(_context, conv.UserAId).AnyAsync(c => c.Id == conv.Id, ct)) continue;
             conv.InactivityNudgeSentAt = now;
             // REQ-23: Nudge both participants via SignalR (Step 15)
             await _notificationService.NotifyInactivityNudgeAsync(conv.UserAId, conv.UserBId, conv.Id, ct);
         }
 
         await _context.SaveChangesAsync(ct);
+        await transaction.CommitAsync(ct);
+    }
+
+    private async Task<IDbContextTransaction> LockConversationAsync(Guid userId, Guid conversationId, CancellationToken ct)
+    {
+        var transaction = await _context.Database.BeginTransactionAsync(ct);
+        try
+        {
+            var campus = await _context.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => (Guid?)u.CampusId).SingleOrDefaultAsync(ct)
+                ?? throw new EligibilityException("Account is unavailable.");
+            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Campuses\" WHERE \"Id\" = {campus} FOR UPDATE", ct);
+            if (!await _context.Users.AsNoTracking().AnyAsync(u => u.Id == userId && u.CampusId == campus, ct))
+                throw new EligibilityException("Account campus changed; retry the request.");
+            await ResourceAccess.RequireConversationAsync(_context, userId, conversationId, ct);
+            await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Conversations\" WHERE \"Id\" = {conversationId} FOR UPDATE", ct);
+            return transaction;
+        }
+        catch { await transaction.DisposeAsync(); throw; }
     }
 }

@@ -27,6 +27,20 @@ public class VouchHub(IApplicationDbContext db, RealtimeConnections connections,
         connections.Join(Context.ConnectionId, id);
     }
 
+    public async Task JoinArchitectAlerts(string campusId)
+    {
+        var user = await RequireCurrentAsync();
+        if (!Guid.TryParse(campusId, out var campus) || user.Role != UserRole.Architect || user.Status != AccountStatus.Active || user.CampusId != campus)
+            throw new HubException("Architect alerts are unavailable.");
+        connections.JoinArchitectAlerts(Context.ConnectionId, campus);
+    }
+
+    public async Task LeaveArchitectAlerts(string campusId)
+    {
+        await RequireCurrentAsync();
+        connections.LeaveArchitectAlerts(Context.ConnectionId);
+    }
+
     private async Task<User> RequireCurrentAsync()
     {
         try

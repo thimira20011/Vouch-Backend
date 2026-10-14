@@ -23,7 +23,7 @@ This roadmap covers the defects identified in the review and the remaining SRS w
 | 9 | Campus, block and realtime resource access controls | Implemented; adversarial checks passed; production containment acceptance remains Step 21 |
 | 10 | Correct vouch submission, counters and peer requests | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
 | 11 | Correct moderation decisions and report review | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
-| 12 | Durable alerts and email deadlines | Pending |
+| 12 | Durable alerts and email deadlines | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
 | 13 | Private durable photos and staged reveal | Pending |
 | 14 | Complete account deletion within its deadline | Pending |
 | 15 | Idempotent, concurrent-safe match acceptance | Pending |
@@ -345,3 +345,18 @@ Verification:
 - Temporary development API returned HTTP 200 `Healthy`, onboarding options 200 and anonymous Architect reports 401, then was stopped. Credentials and backup files remain excluded from Git. No production database or application keys were changed.
 
 Next implementation step: Step 12, durable alerts and email deadlines. Photo protection, deletion deadlines, deployment performance and frontend acceptance remain their later numbered steps.
+
+## Step 12 change record — 14 October 2026
+
+High-severity reports and trust anomalies now save encrypted notification events with their source transaction. Inactivity checks persist both participant notices with the tracking marker; new letters invalidate the previous nudge cycle. Saving an outbox event can no longer fail independently of its report/vouch/nudge state. Message clarity broadcasts now occur after commit. Offline clients recover notices through a private paginated inbox with independent, idempotent read receipts.
+
+Architect alert subscriptions require the current active Architect and matching campus. Outbound events and inbox reads recheck current session/resource access. Report emails target current campus Architect account mailboxes, replacing the global recipient setting. The delivery worker uses atomic PostgreSQL leases, per-recipient acceptance receipts, bounded SMTP attempts and retry backoff. Required report emails have a one-hour creation-time deadline; overdue delivery fails health and retains missed-deadline history after recovery. Production requires valid STARTTLS SMTP and enabled background jobs. Missing Development SMTP retains pending work. See [durable notifications](durable-notifications.md) for the transport's at-least-once limitation and live-provider validation.
+
+Verification:
+
+- Full Release suite on disposable PostgreSQL 17.11: **237 passed** (70 unit, 167 integration), zero failed/skipped. The 32 new cases cover SMTP validation, source/outbox rollback, restart recovery, inbox ownership/read/pagination, concurrent delivery claims, cancellation/lease recovery, partial-recipient failures, controlled outage recovery within one hour, overdue health/recovery, obsolete sources, relational cleanup and previous-schema upgrade. Existing WebSocket tests now verify authorized Architect subscription and actual anomaly delivery.
+- Release build passed with zero warnings/errors; publish excluded local settings; EF confirmed no pending model changes. Reviewed migration SQL and tested idempotent upgrade SQL. The restore rehearsal caught PostgreSQL's additional parentheses in the new partial predicate; the strict inspector now recognizes that exact formatting and still rejects altered boolean/null conditions.
+- Verified a fresh encrypted development backup by decrypting, restoring and upgrading a generated loopback copy. Applied `20261014041109_DurableNotificationDelivery` to Supabase development; inspection recognized all eight migrations without issues, collisions or rewrites. Counts remained four campuses, six reflections and 50 icebreakers; users/invites/vouches/requests/reports/audits/notifications/receipts remained zero.
+- The temporary API returned 200 `Healthy` and anonymous inbox/delivery-status requests returned 401, then was stopped. No production database, live email delivery or application-key change was performed. SMTP tests used an injected sender, not real mailboxes; actual provider acceptance and deployment monitoring remain operator checks.
+
+Next implementation step: Step 13, private photo storage and visual reveal. Deletion deadlines, deployment performance and frontend acceptance remain their later numbered steps.

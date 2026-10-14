@@ -124,6 +124,8 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Message> Messages => Set<Message>();
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<ModerationAudit> ModerationAudits => Set<ModerationAudit>();
+    public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<NotificationReceipt> NotificationReceipts => Set<NotificationReceipt>();
     public DbSet<Block> Blocks => Set<Block>();
     public DbSet<IcebreakerPrompt> Icebreakers => Set<IcebreakerPrompt>();
     public DbSet<ProtectionState> ProtectionStates => Set<ProtectionState>();
@@ -285,6 +287,25 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         });
 
         // Report Configuration
+        modelBuilder.Entity<Notification>(b =>
+        {
+            b.HasOne<Campus>().WithMany().HasForeignKey(n => n.CampusId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany().HasForeignKey(n => n.RecipientUserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(n => n.SubjectUser).WithMany().HasForeignKey(n => n.SubjectUserId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(n => n.Conversation).WithMany().HasForeignKey(n => n.ConversationId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne(n => n.Report).WithMany().HasForeignKey(n => n.ReportId).OnDelete(DeleteBehavior.Cascade);
+            b.Property(n => n.DedupeKey).HasMaxLength(180);
+            b.Property(n => n.LastErrorCode).HasMaxLength(40);
+            b.HasIndex(n => n.DedupeKey).IsUnique();
+            b.HasIndex(n => new { n.CampusId, n.RecipientUserId, n.CreatedAt });
+            b.HasIndex(n => new { n.NextAttemptAt, n.LeaseUntil }).HasFilter("\"CompletedAt\" IS NULL AND \"CancelledAt\" IS NULL");
+        });
+        modelBuilder.Entity<NotificationReceipt>(b =>
+        {
+            b.HasKey(r => new { r.NotificationId, r.UserId });
+            b.HasOne(r => r.Notification).WithMany().HasForeignKey(r => r.NotificationId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany().HasForeignKey(r => r.UserId).OnDelete(DeleteBehavior.Cascade);
+        });
         modelBuilder.Entity<ModerationAudit>(b =>
         {
             b.HasOne(a => a.SubjectUser).WithMany().HasForeignKey(a => a.SubjectUserId).OnDelete(DeleteBehavior.Cascade);

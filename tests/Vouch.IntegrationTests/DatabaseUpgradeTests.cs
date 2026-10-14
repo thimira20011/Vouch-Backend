@@ -67,6 +67,20 @@ public sealed class DatabaseUpgradeTests : IAsyncLifetime
     }
 
     [Theory]
+    [InlineData(false)] [InlineData(true)]
+    public async Task NotificationIndexPredicateDriftIsRefusedBeforeUpgrade(bool useOr)
+    {
+        await using var db = Context();
+        await Upgrade(db).ApplyAsync();
+        Assert.NotEmpty(await new LegacySchemaBaseline(db).IdentifyAsync());
+        var change = useOr
+            ? "DROP INDEX \"IX_Notifications_NextAttemptAt_LeaseUntil\"; CREATE INDEX \"IX_Notifications_NextAttemptAt_LeaseUntil\" ON \"Notifications\" (\"NextAttemptAt\", \"LeaseUntil\") WHERE \"CompletedAt\" IS NULL OR \"CancelledAt\" IS NULL;"
+            : "DROP INDEX \"IX_Notifications_NextAttemptAt_LeaseUntil\"; CREATE INDEX \"IX_Notifications_NextAttemptAt_LeaseUntil\" ON \"Notifications\" (\"NextAttemptAt\", \"LeaseUntil\") WHERE \"CompletedAt\" IS NULL AND \"CancelledAt\" IS NOT NULL;";
+        await db.Database.ExecuteSqlRawAsync(change);
+        await Assert.ThrowsAsync<InvalidOperationException>(() => Upgrade(db).ApplyAsync(backupConfirmed: true));
+    }
+
+    [Theory]
     [InlineData(LegacySchemaBaseline.Initial)]
     [InlineData(LegacySchemaBaseline.BeforeProtection)]
     public async Task EnsureCreatedSchemas_AreRecognizedAdoptedAndPreservePlaintextAndCbcRows(string migrationId)

@@ -14,7 +14,7 @@ public interface ISlowBurnNotificationService
     /// <summary>
     /// REQ-23: Sends a gentle re-engagement nudge to both participants when
     /// a conversation has been inactive for 21 days.
-    /// Pushed via SignalR to user_{userAId} and user_{userBId}.
+    /// Persisted for both participants; published by the post-commit delivery worker.
     /// </summary>
     Task NotifyInactivityNudgeAsync(Guid userAId, Guid userBId, Guid conversationId, CancellationToken cancellationToken = default);
 }

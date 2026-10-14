@@ -7,111 +7,35 @@ using Vouch.Application.Common;
 
 namespace Vouch.Infrastructure.Services;
 
-/// <summary>
-/// Step 18 — NFR-12: SMTP email implementation using System.Net.Mail.
-/// No extra NuGet packages required — uses the BCL SmtpClient.
-///
-/// Configuration (appsettings.json → Smtp section):
-///   Smtp:Host          — SMTP server hostname (e.g. smtp.gmail.com)
-///   Smtp:Port          — SMTP port (587 for TLS, 465 for SSL)
-///   Smtp:User          — Sender account username
-///   Smtp:Password      — Sender account password / app-password
-///   Smtp:FromAddress   — From address (defaults to Smtp:User if omitted)
-///   Smtp:ArchitectEmail — Where high-severity alerts are sent
-///
-/// If Smtp:Host is empty/missing the service is a no-op (development safe).
-/// </summary>
 public sealed class SmtpEmailService : IEmailService, IVerificationEmailSender
 {
-    private readonly ILogger<SmtpEmailService> _logger;
-    private readonly string? _host;
-    private readonly int _port;
-    private readonly string? _user;
-    private readonly string? _password;
-    private readonly string _fromAddress;
-    private readonly bool _isConfigured;
-
+    private readonly SmtpSettings? _settings;
     public SmtpEmailService(IConfiguration configuration, ILogger<SmtpEmailService> logger)
     {
-        _logger = logger;
-
-        _host = configuration["Smtp:Host"];
-        _port = int.TryParse(configuration["Smtp:Port"], out var port) ? port : 587;
-        _user = configuration["Smtp:User"];
-        _password = configuration["Smtp:Password"];
-        _fromAddress = string.IsNullOrWhiteSpace(configuration["Smtp:FromAddress"]) ? _user ?? "noreply@vouch.app" : configuration["Smtp:FromAddress"]!;
-
-        // Only active if a host is configured — safe no-op in local dev without SMTP
-        _isConfigured = !string.IsNullOrWhiteSpace(_host)
-                     && !string.IsNullOrWhiteSpace(_user)
-                     && !string.IsNullOrWhiteSpace(_password);
-
-        if (!_isConfigured)
-        {
-            _logger.LogWarning(
-                "SmtpEmailService: Smtp:Host / Smtp:User / Smtp:Password not configured. " +
-                "Email sending is disabled. Set these values for production.");
-        }
+        _settings = SmtpSettings.Read(configuration);
+        if (_settings is null) logger.LogWarning("SMTP is unconfigured. Verification is unavailable and alert emails remain pending.");
     }
-
     public async Task SendVerificationAsync(string to, string token, CancellationToken ct = default)
     {
-        if (!_isConfigured) throw new VerificationDeliveryException();
         try
         {
-            using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
-            deadline.CancelAfter(TimeSpan.FromSeconds(15));
-            using var client = new SmtpClient(_host, _port)
-            {
-                Credentials = new NetworkCredential(_user, _password), EnableSsl = true
-            };
-            using var message = new MailMessage(_fromAddress, to, "Verify your Vouch university email",
-                $"Enter this verification token in Vouch: {token}\n\nIt expires in 30 minutes. If you did not request it, ignore this email.");
-            await client.SendMailAsync(message, deadline.Token);
+            await SendAsync(to, "Verify your Vouch university email",
+                $"Enter this verification token in Vouch: {token}\n\nIt expires in 30 minutes. If you did not request it, ignore this email.", ct);
         }
         catch (OperationCanceledException) when (ct.IsCancellationRequested) { throw; }
         catch (Exception) { throw new VerificationDeliveryException(); }
     }
-
     public async Task SendAsync(string to, string subject, string body, CancellationToken ct = default)
     {
-        if (!_isConfigured)
+        if (_settings is null) throw new InvalidOperationException("SMTP is not configured.");
+        using var deadline = CancellationTokenSource.CreateLinkedTokenSource(ct);
+        deadline.CancelAfter(TimeSpan.FromSeconds(15));
+        using var client = new SmtpClient(_settings.Host, _settings.Port)
         {
-            _logger.LogInformation(
-                "SmtpEmailService (no-op): would send '{Subject}' to {To}.", subject, to);
-            return;
-        }
-
-        try
-        {
-            using var client = new SmtpClient(_host, _port)
-            {
-                Credentials = new NetworkCredential(_user, _password),
-                EnableSsl = true,
-                Timeout = 15_000  // 15s — don't block caller threads indefinitely
-            };
-
-            using var message = new MailMessage(
-                from: _fromAddress,
-                to: to,
-                subject: subject,
-                body: body
-            );
-
-            await client.SendMailAsync(message, ct);
-
-            _logger.LogInformation(
-                "SmtpEmailService: email '{Subject}' sent to {To}.", subject, to);
-        }
-        catch (OperationCanceledException)
-        {
-            _logger.LogWarning("SmtpEmailService: send cancelled for '{Subject}' to {To}.", subject, to);
-        }
-        catch (Exception ex)
-        {
-            // NFR-12: Email failure must not disrupt the main report submission flow
-            _logger.LogError(ex,
-                "SmtpEmailService: failed to send '{Subject}' to {To}. Report was still saved.", subject, to);
-        }
+            Credentials = new NetworkCredential(_settings.User, _settings.Password), EnableSsl = true
+        };
+        using var message = new MailMessage(_settings.FromAddress, to, subject, body);
+        // Successful return means SMTP accepted the message. Failures must reach the durable retry worker.
+        await client.SendMailAsync(message, deadline.Token);
     }
 }

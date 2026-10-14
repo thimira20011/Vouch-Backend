@@ -15,21 +15,18 @@ namespace Vouch.Infrastructure.Services;
 public partial class ModerationService : IModerationService
 {
     private readonly ApplicationDbContext _context;
-    private readonly IEmailService _emailService;
-    private readonly string? _architectEmail;
+    private readonly NotificationWriter _notifications;
     private readonly ILogger<ModerationService> _logger;
     private readonly IRealtimeConnections? _realtime;
     private readonly TimeProvider _clock;
 
     public ModerationService(
         ApplicationDbContext context,
-        IEmailService emailService,
-        IConfiguration configuration,
+        NotificationWriter notifications,
         ILogger<ModerationService> logger, IRealtimeConnections? realtime = null, TimeProvider? clock = null)
     {
         _context = context;
-        _emailService = emailService;
-        _architectEmail = configuration["Smtp:ArchitectEmail"];
+        _notifications = notifications;
         _logger = logger;
         _realtime = realtime;
         _clock = clock ?? TimeProvider.System;

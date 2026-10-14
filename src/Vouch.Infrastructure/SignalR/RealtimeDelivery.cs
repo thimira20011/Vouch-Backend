@@ -15,7 +15,8 @@ public sealed class RealtimeDelivery(IApplicationDbContext db, RealtimeConnectio
         foreach (var connection in connections.Snapshot())
         {
             if (userId is not null && connection.UserId != userId ||
-                subscriptionRequired && conversationId is not null && !connection.Conversations.ContainsKey(conversationId.Value)) continue;
+                subscriptionRequired && conversationId is not null && !connection.Conversations.ContainsKey(conversationId.Value) ||
+                subscriptionRequired && architectCampusId is not null && connection.ArchitectAlertCampus != architectCampusId) continue;
             try
             {
                 if (connection.ExpiresAt <= clock.GetUtcNow()) throw new UnauthorizedAccessException();

@@ -30,7 +30,7 @@ Architect privileges apply to the Architect's current campus. Dashboard, invite 
 
 ## Realtime access
 
-Hub connection and each invocation recheck current session/account eligibility. `JoinConversation` requires a GUID, actual participation, eligible same-campus participants and no block. Realtime subscriptions are held in a server connection registry rather than treated as permission grants. Every outbound event rechecks session, expiration and resource policy before addressing an individual connection. Trust anomaly alerts go only to current Active Architects of the affected campus.
+Hub connection and each invocation recheck current session/account eligibility. `JoinConversation` requires a GUID, actual participation, eligible same-campus participants and no block. Realtime subscriptions are held in a server connection registry rather than treated as permission grants. Every outbound event rechecks session, expiration and resource policy before addressing an individual connection. Trust anomaly/report alerts require `JoinArchitectAlerts(campusId)` and go only to current active Architects of that campus. The [durable inbox](durable-notifications.md) provides offline recovery.
 
 Blocking removes affected conversation subscriptions on the local instance; logout and tracked revocation abort affected local sockets. Changes made through another database connection are checked before the next invocation or outbound event. Idle connections close at JWT expiration through SignalR's `CloseOnAuthenticationExpiration`. Clients reconnect with their refreshed JWT. See [SignalR authentication and authorization](https://learn.microsoft.com/en-us/aspnet/core/signalr/authn-and-authz?view=aspnetcore-10.0).
 

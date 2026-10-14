@@ -429,9 +429,18 @@ public sealed class SessionsAndAccessTests(PostgresFixture postgres) : IAsyncLif
         await InvokeAsync(local, "LeaveConversation", _conversation.Id.ToString());
         await InvokeAsync(foreign, "LeaveConversation", _conversation.Id.ToString());
         await InvokeAsync(ordinary, "LeaveConversation", _conversation.Id.ToString());
+        Assert.False((await InvokeAsync(local, "JoinArchitectAlerts", _alice.CampusId.ToString())).TryGetProperty("error", out _));
+        Assert.True((await InvokeAsync(foreign, "JoinArchitectAlerts", _alice.CampusId.ToString())).TryGetProperty("error", out _));
+        Assert.True((await InvokeAsync(ordinary, "JoinArchitectAlerts", _alice.CampusId.ToString())).TryGetProperty("error", out _));
         await using var scope = _factory.Services.CreateAsyncScope();
         await scope.ServiceProvider.GetRequiredService<ISlowBurnNotificationService>().NotifyTrustScoreAlertToArchitectAsync(_alice.Id, 0, 4);
-        Assert.Equal("TrustScoreAnomalyDetected", (await ReceiveAsync(local)).GetProperty("target").GetString());
+        await scope.ServiceProvider.GetRequiredService<Vouch.Infrastructure.Services.NotificationDispatcher>().ProcessDueAsync();
+        var alert = await ReceiveAsync(local);
+        Assert.Equal("TrustScoreAnomalyDetected", alert.GetProperty("target").GetString());
+        var payload = alert.GetProperty("arguments")[0];
+        Assert.Equal(_alice.Id, payload.GetProperty("userId").GetGuid());
+        Assert.Equal(4, payload.GetProperty("newScore").GetDouble());
+        Assert.NotEqual(Guid.Empty, payload.GetProperty("notificationId").GetGuid());
         Assert.Equal(3, (await InvokeAsync(foreign, "LeaveConversation", _conversation.Id.ToString())).GetProperty("type").GetInt32());
         Assert.Equal(3, (await InvokeAsync(ordinary, "LeaveConversation", _conversation.Id.ToString())).GetProperty("type").GetInt32());
     }

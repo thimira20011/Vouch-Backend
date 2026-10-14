@@ -7,6 +7,7 @@ using Vouch.Application.Features.Matching;
 using Vouch.Application.Features.Messaging;
 using Vouch.Application.Features.Moderation;
 using Vouch.Application.Features.Vouching;
+using Vouch.Application.Features.Notifications;
 using Vouch.Infrastructure.Persistence;
 using Vouch.Infrastructure.Security;
 using Vouch.Infrastructure.Services;
@@ -41,8 +42,7 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, BCryptPasswordHasher>();
         services.AddSingleton<IJwtTokenService>(new JwtTokenService(configuration));
 
-        // Step 18: Email service for high-severity report alerts (NFR-12)
-        // No-op when Smtp:Host is not configured (safe for local dev)
+        _ = SmtpSettings.Read(configuration);
         services.AddSingleton<IEmailService, SmtpEmailService>();
         services.AddSingleton<IVerificationEmailSender, SmtpEmailService>();
         services.AddSingleton(TimeProvider.System);
@@ -51,6 +51,10 @@ public static class DependencyInjection
         services.AddSingleton<RealtimeConnections>();
         services.AddSingleton<IRealtimeConnections>(sp => sp.GetRequiredService<RealtimeConnections>());
         services.AddScoped<RealtimeDelivery>();
+        services.AddScoped<NotificationWriter>();
+        services.AddScoped<NotificationDispatcher>();
+        services.AddScoped<INotificationService, NotificationService>();
+        services.AddHealthChecks().AddCheck<NotificationDeliveryHealthCheck>("notification-email-deadlines", tags: ["notifications"]);
 
         // Step 21: Photo storage service (REQ-17)
         // Default: local disk under wwwroot/photos/. Override with cloud impl for production.
@@ -74,6 +78,7 @@ public static class DependencyInjection
         // ConversationInactivityWorker: 00:05 UTC — nudge (21d) + archive (30d) inactive conversations
         if (configuration.GetValue("BackgroundJobs:Enabled", true))
         {
+            services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.NotificationDeliveryWorker>();
             services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.ConversationInactivityWorker>();
             // AccountDeletionWorker: 01:05 UTC — hard-delete accounts with DeletionRequested > 30 days (NFR-6)
             services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.AccountDeletionWorker>();

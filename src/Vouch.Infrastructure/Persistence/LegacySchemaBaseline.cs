@@ -118,6 +118,8 @@ public sealed class LegacySchemaBaseline(ApplicationDbContext db)
                 var filter = index.MappedIndexes.First().GetFilter();
                 // PostgreSQL prints an enclosing pair of parentheses for this reviewed partial predicate.
                 if (filter == "\"Status\" = 1") filter = "(\"Status\" = 1)";
+                if (filter == "\"CompletedAt\" IS NULL AND \"CancelledAt\" IS NULL")
+                    filter = "((\"CompletedAt\" IS NULL) AND (\"CancelledAt\" IS NULL))";
                 if (!indexes.TryGetValue(index.Name, out var actual) || actual !=
                     (index.IsUnique, string.Join(',', index.Columns.Select(c => c.Name)), filter)) return false;
             }

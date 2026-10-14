@@ -204,7 +204,9 @@ For atomic vouch submission, current trust totals, zero-weight incubation activa
 
 For report evidence, paginated Architect review, atomic decisions and audited suspension/reinstatement, follow [moderation review](docs/moderation-review.md). The third upheld decision within 90 days suspends immediately. Apply the Step 11 migration through the explicit upgrade command before running this version.
 
-`.env.example` documents CORS browser origins, optional SMTP/Anthropic configuration and photo settings. Empty SMTP host disables delivery; configure all SMTP fields before testing alerts. Empty Anthropic key uses curated fallback prompts. Local photo storage defaults to `wwwroot/photos`; Compose mounts a persistent photo volume. Photos require authenticated retrieval at `/photos`; durable encrypted storage and intermediate reveal variants remain Step 13 work.
+For encrypted offline inboxes, Architect subscriptions, retryable report emails and deadline monitoring, follow [durable notifications](docs/durable-notifications.md). Apply the Step 12 migration before running this version. Production requires configured SMTP and enabled background jobs; development without SMTP retains alert emails as pending work.
+
+`.env.example` documents CORS browser origins, SMTP/Anthropic configuration and photo settings. Configure SMTP before testing live verification/alerts. Empty Anthropic key uses curated fallback prompts. Local photo storage defaults to `wwwroot/photos`; Compose mounts a persistent photo volume. Photos require authenticated retrieval at `/photos`; durable encrypted storage and intermediate reveal variants remain Step 13 work.
 
 For deployment, provide secrets through the environment or a secret manager, set the Production environment and supply real HTTPS browser origins. Complete the explicit database upgrade before starting replicas. The old `Database__SeedOnStartup` flag is no longer used. The roadmap records remaining production work. If fixed credentials from earlier versions were deployed, rotate them using the explicit reviewed admin-password operation; this implementation does not alter any live credentials or encryption keys.
 

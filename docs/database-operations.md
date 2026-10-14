@@ -8,6 +8,8 @@ Step 10 adds `20261009213532_ConsistentVouchesAndPeerRequests`: private request 
 
 Step 11 adds `20261011065511_AuditedModerationReview`: encrypted audit reasons, deciding-Architect IDs and previous suspension state. Review [moderation review](moderation-review.md), including the resolution-time 90-day rule and legacy timestamp fallback. The explicit upgrade also reconciles lifetime upheld totals and visibility from current scoped reports. It preserves existing suspensions and does not invent historical actors, prior states or audit records. Use the reviewed command after operator bulk report changes as well.
 
+Step 12 adds `20261014041109_DurableNotificationDelivery`: encrypted notification inbox/outbox events and per-user read/email receipts. Review [durable notifications](durable-notifications.md), stop writers and delivery workers during upgrade/rotation/restore, and resume only after the full explicit command succeeds. Historical reports are preserved without invented email history or automatic retrospective sending. Production requires valid SMTP and background jobs before the API starts.
+
 Updated 10 October 2026. These operations are explicit deployment tasks. API startup never creates schemas, migrates, backfills, seeds or creates privileged accounts. `/healthz` checks the migration history, conversion marker, lookup-key verification, encryption canary, an email read, the enabled session-revocation trigger and configured campus containment; a PostgreSQL ping alone is insufficient. The root endpoint points to readiness rather than declaring the database operational.
 
 ## Configuration

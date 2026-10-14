@@ -10,12 +10,16 @@ namespace Vouch.Infrastructure.Services;
 public class SlowBurnNotificationService : ISlowBurnNotificationService
 {
     private readonly RealtimeDelivery _delivery;
-    private readonly IApplicationDbContext _db;
+    private readonly Vouch.Infrastructure.Persistence.ApplicationDbContext _db;
 
-    public SlowBurnNotificationService(RealtimeDelivery delivery, IApplicationDbContext db)
+    private readonly NotificationWriter _notifications;
+    private readonly TimeProvider _clock;
+    public SlowBurnNotificationService(RealtimeDelivery delivery, Vouch.Infrastructure.Persistence.ApplicationDbContext db, NotificationWriter notifications, TimeProvider clock)
     {
         _delivery = delivery;
         _db = db;
+        _notifications = notifications;
+        _clock = clock;
     }
 
     public async Task NotifyMessageDeliveredAsync(
@@ -83,46 +87,22 @@ public class SlowBurnNotificationService : ISlowBurnNotificationService
             userId: recipientUserId, conversationId: conversationId, ct: cancellationToken);
     }
 
-    public async Task NotifyTrustScoreAlertToArchitectAsync(
-        Guid userId,
-        double oldScore,
-        double newScore,
-        CancellationToken cancellationToken = default)
+    public async Task NotifyTrustScoreAlertToArchitectAsync(Guid userId, double oldScore, double newScore, CancellationToken cancellationToken = default)
     {
-        var campusId = await _db.Users.Where(u => u.Id == userId).Select(u => u.CampusId).SingleOrDefaultAsync(cancellationToken);
-        await _delivery.SendAsync(
-            "TrustScoreAnomalyDetected",
-            new
-            {
-                UserId = userId,
-                OldScore = oldScore,
-                NewScore = newScore,
-                Delta = Math.Round(newScore - oldScore, 2),
-                DetectedAt = DateTimeOffset.UtcNow
-            },
-            architectCampusId: campusId, ct: cancellationToken);
+        var source = await _db.Users.AsNoTracking().SingleOrDefaultAsync(u => u.Id == userId, cancellationToken)
+            ?? throw new Vouch.Application.Common.EligibilityException("Account is unavailable.");
+        var eventKey = FormattableString.Invariant($"direct:{userId}:{_clock.GetUtcNow().UtcTicks}:{oldScore:R}:{newScore:R}");
+        await _notifications.QueueTrustAsync(source.CampusId, userId, oldScore, newScore, eventKey, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
     }
 
-    /// <summary>
-    /// REQ-23: Sends a gentle re-engagement nudge to both participants.
-    /// Fired when a conversation has been silent for 21 days.
-    /// </summary>
-    public async Task NotifyInactivityNudgeAsync(
-        Guid userAId,
-        Guid userBId,
-        Guid conversationId,
-        CancellationToken cancellationToken = default)
+    public async Task NotifyInactivityNudgeAsync(Guid userAId, Guid userBId, Guid conversationId, CancellationToken cancellationToken = default)
     {
-        var payload = new
-        {
-            ConversationId = conversationId,
-            Message = "It's been a while. No pressure — your conversation is still here whenever you're ready.",
-            SentAt = DateTimeOffset.UtcNow
-        };
-
-        // Notify both participants independently via their personal user group
-        await _delivery.SendAsync("InactivityNudge", payload, userId: userAId, conversationId: conversationId, ct: cancellationToken);
-
-        await _delivery.SendAsync("InactivityNudge", payload, userId: userBId, conversationId: conversationId, ct: cancellationToken);
+        var conversation = await Vouch.Infrastructure.Security.ResourceAccess.VisibleConversations(_db, userAId).AsNoTracking()
+            .SingleOrDefaultAsync(c => c.Id == conversationId && c.UserAId == userAId && c.UserBId == userBId && c.Status == ConversationStatus.Active, cancellationToken);
+        if (conversation is null) return;
+        var campus = await _db.Users.Where(u => u.Id == userAId).Select(u => u.CampusId).SingleAsync(cancellationToken);
+        await _notifications.QueueInactivityAsync(conversation, campus, cancellationToken);
+        await _db.SaveChangesAsync(cancellationToken);
     }
 }

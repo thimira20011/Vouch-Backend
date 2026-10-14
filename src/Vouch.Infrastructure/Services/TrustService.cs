@@ -11,7 +11,7 @@ using Vouch.Infrastructure.Persistence;
 
 namespace Vouch.Infrastructure.Services;
 
-public partial class TrustService(ApplicationDbContext context, ISlowBurnNotificationService notificationService,
+public partial class TrustService(ApplicationDbContext context, NotificationWriter notifications,
     ILogger<TrustService> logger, TimeProvider clock) : ITrustService
 {
     public async Task<VouchDto> SubmitVouchAsync(Guid voucherUserId, SubmitVouchRequest request, CancellationToken ct = default)
@@ -51,13 +51,15 @@ public partial class TrustService(ApplicationDbContext context, ISlowBurnNotific
         var newScore = await context.Users.Where(u => u.Id == target.Id).Select(u => u.TrustScore).SingleAsync(ct);
         var recent = await TrustMetrics.Qualifying(context).Where(v => v.TargetUserId == target.Id && v.CreatedAt >= now.AddHours(-48))
             .SumAsync(v => (double?)v.FinalCalculatedWeight, ct) ?? 0;
+        if (TrustScoreCalculator.IsAnomalyVelocity(recent))
+        {
+            await notifications.QueueTrustAsync(campusId, target.Id, oldScore, newScore, record.Id.ToString(), ct);
+            await context.SaveChangesAsync(ct);
+        }
         await transaction.CommitAsync(ct);
         if (TrustScoreCalculator.IsAnomalyVelocity(recent))
         {
             logger.LogWarning("Trust anomaly. UserId={UserId} ScoreIncrease48h={ScoreIncrease}", target.Id, recent);
-            try { await notificationService.NotifyTrustScoreAlertToArchitectAsync(target.Id, oldScore, newScore, ct); }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            { logger.LogError(ex, "Trust alert delivery failed after committed vouch. UserId={UserId}", target.Id); }
         }
         return new(record.Id, voucher.Id, voucher.FullName, record.Traits, record.Note, record.FinalCalculatedWeight, record.CreatedAt);
     }
@@ -84,6 +86,8 @@ public partial class TrustService(ApplicationDbContext context, ISlowBurnNotific
         var campusId = await context.Users.AsNoTracking().Where(u => u.Id == userId).Select(u => (Guid?)u.CampusId).SingleOrDefaultAsync(ct)
             ?? throw new UnauthorizedAccessException("Account is unavailable.");
         await context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Campuses\" WHERE \"Id\" = {campusId} FOR UPDATE", ct);
+        if (!await context.Users.AsNoTracking().AnyAsync(u => u.Id == userId && u.CampusId == campusId, ct))
+            throw new Vouch.Application.Common.EligibilityException("Account campus changed; retry the request.");
         return campusId;
     }
 }

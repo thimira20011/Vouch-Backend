@@ -84,11 +84,18 @@ public sealed class RecordingEmailService : IEmailService, IVerificationEmailSen
         VerificationTokens[to] = token;
         return Task.CompletedTask;
     }
-    public int Calls { get; private set; }
-    public Task SendAsync(string to, string subject, string body, CancellationToken ct = default)
+    private int _calls;
+    public int Calls => Volatile.Read(ref _calls);
+    public bool FailDelivery { get; set; }
+    public Func<CancellationToken, Task>? BeforeDelivery { get; set; }
+    public System.Collections.Concurrent.ConcurrentDictionary<string, byte> FailingRecipients { get; } = new();
+    public System.Collections.Concurrent.ConcurrentDictionary<string, int> Accepted { get; } = new();
+    public async Task SendAsync(string to, string subject, string body, CancellationToken ct = default)
     {
-        Calls++;
-        return Task.CompletedTask;
+        Interlocked.Increment(ref _calls);
+        if (BeforeDelivery is not null) await BeforeDelivery(ct);
+        if (FailDelivery || FailingRecipients.ContainsKey(to)) throw new IOException("Injected email outage.");
+        Accepted.AddOrUpdate(to, 1, (_, count) => count + 1);
     }
 }
 

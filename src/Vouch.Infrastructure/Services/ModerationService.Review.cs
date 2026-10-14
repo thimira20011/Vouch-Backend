@@ -19,6 +19,8 @@ public partial class ModerationService
             .Select(u => (Guid?)u.CampusId).SingleOrDefaultAsync(ct)
             ?? throw new EligibilityException("Account is unavailable.");
         await _context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Campuses\" WHERE \"Id\" = {campus} FOR UPDATE", ct);
+        if (!await _context.Users.AsNoTracking().AnyAsync(u => u.Id == userId && u.CampusId == campus, ct))
+            throw new EligibilityException("Account campus changed; retry the request.");
         return campus;
     }
 
@@ -64,19 +66,10 @@ public partial class ModerationService
         if (request.MessageId.HasValue && !await Evidence(report).AnyAsync(ct))
             throw new EligibilityException("Reported message is unavailable.");
         _context.Reports.Add(report);
+        await _notifications.QueueReportAsync(report, reporter.CampusId, ct);
         await _context.SaveChangesAsync(ct);
         await transaction.CommitAsync(ct);
         _logger.LogInformation("Report submitted. ReportId={ReportId} Category={Category} Severity={Severity}", report.Id, report.Category, report.SeverityScore);
-        if (report.SeverityScore >= 4 && !string.IsNullOrWhiteSpace(_architectEmail))
-        {
-            try
-            {
-                await _emailService.SendAsync(_architectEmail, $"[Vouch Alert] High-Severity Report: {report.Category}",
-                    $"Review report {report.Id} in the Architect dashboard. Category: {report.Category}; severity: {report.SeverityScore}/5.", ct);
-            }
-            catch (Exception ex) when (ex is not OperationCanceledException)
-            { _logger.LogError(ex, "Report alert delivery failed after commit. ReportId={ReportId}", report.Id); }
-        }
         // The no-tracking users supply the response without attaching stale user entities.
         return new(report.Id, reporter.Id, reporter.Email, target.Id, target.FullName, report.Category,
             report.Details, report.SeverityScore, report.Status, report.CreatedAt, report.RelatedMessageId);

@@ -11,6 +11,7 @@ using Vouch.Infrastructure;
 using Vouch.Infrastructure.Persistence;
 using Vouch.Infrastructure.SignalR;
 using Vouch.Infrastructure.Security;
+using Vouch.Infrastructure.Services;
 
 // Step 22: Configure Serilog from appsettings ("Serilog" section)
 // Console sink: always active. File sink: optional, configurable per environment.
@@ -32,6 +33,12 @@ builder.Host.UseSerilog((context, services, logger) =>
 var useTrustedProxies = StartupConfiguration.AddTrustedProxySupport(builder.Services, builder.Configuration);
 if (builder.Environment.IsProduction() && string.IsNullOrWhiteSpace(builder.Configuration["Tenancy:CampusCode"]))
     throw new InvalidOperationException("Production requires Tenancy:CampusCode and an isolated campus database/deployment. See docs/sessions-and-access.md.");
+if (builder.Environment.IsProduction())
+{
+    _ = SmtpSettings.Read(builder.Configuration, production: true);
+    if (!builder.Configuration.GetValue("BackgroundJobs:Enabled", true))
+        throw new InvalidOperationException("Production requires BackgroundJobs:Enabled for durable notification delivery.");
+}
 var configuredPhotoUrl = builder.Configuration["PhotoStorage:BaseUrl"];
 if (!string.IsNullOrWhiteSpace(configuredPhotoUrl) && configuredPhotoUrl != "/photos")
     throw new InvalidOperationException("PhotoStorage:BaseUrl must be /photos for authorized local photo retrieval.");
@@ -160,6 +167,7 @@ app.MapMessagingEndpoints();
 app.MapWingmanEndpoints();
 app.MapModerationEndpoints();
 app.MapProfileEndpoints(); // Step 21: PUT /api/profile/photo (REQ-17)
+app.MapNotificationEndpoints();
 
 // 7. Map SignalR Hub
 app.MapHub<VouchHub>("/hubs/vouch", options => options.CloseOnAuthenticationExpiration = true);

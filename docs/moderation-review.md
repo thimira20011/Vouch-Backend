@@ -20,4 +20,4 @@ Review routes:
 
 The dashboard pending total covers the whole queue. Its critical-report preview remains capped at 20; the reports endpoint provides complete review access. Audit entries cannot be changed through tracked application writes. Deleting a report clears its audit reference; deleting the subject removes their audit data. The broader deletion and retention policy remains Step 14.
 
-Durable alert delivery remains Step 12. Current high-severity email delivery happens after commit. Production acceptance and deployment checks remain later steps.
+High-severity alerts are now saved with the report and delivered after commit through [durable notifications](durable-notifications.md), with retryable email and offline Architect inboxes. Production acceptance and live SMTP validation remain later checks.

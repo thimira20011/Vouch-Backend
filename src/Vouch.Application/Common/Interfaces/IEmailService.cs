@@ -7,8 +7,8 @@ namespace Vouch.Application.Common.Interfaces;
 public interface IEmailService
 {
     /// <summary>
-    /// Sends a plain-text email. Fire-and-forget safe — implementations
-    /// must not throw on transient SMTP errors (log and swallow instead).
+    /// Sends a plain-text email. Return only after SMTP acceptance; propagate failures
+    /// and cancellation so the durable delivery worker can retry without claiming success.
     /// </summary>
     Task SendAsync(string to, string subject, string body, CancellationToken ct = default);
 }

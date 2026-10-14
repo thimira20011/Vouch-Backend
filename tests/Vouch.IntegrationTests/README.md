@@ -51,6 +51,8 @@ Use `-Filter 'FullyQualifiedName~VouchingTests'` for a focused regression run; o
 
 - Moderation cases cover concurrent/idempotent decisions, the inclusive resolution-time 90-day boundary, immediate third-report suspension and session revocation, final-pending visibility, complete paginated queues, current campus restrictions on reports and related audits, message evidence linkage, manual suspension/reinstatement, encrypted immutable audit reasons, relational cleanup and upgrade from the previous schema. An injected audit insert failure verifies rollback of the report, suspension, totals and database session revocation.
 
+- Notification cases cover report/vouch/nudge transaction rollback, offline restart recovery, inbox ownership/pagination/read receipts, actual Architect subscription authorization, source campus/block changes, concurrent leases, cancellation recovery, per-recipient SMTP retry, controlled outage recovery within one hour, overdue health/recovery history, cascade cleanup and previous-schema upgrade. Email is always an injected fake; tests never send real messages. Upgrade tests reject altered pending-work index predicates as well as altered request predicates.
+
 To run just the unit suite without PostgreSQL:
 
 ```powershell

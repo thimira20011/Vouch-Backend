@@ -41,7 +41,6 @@ services:
       Smtp__User: ${Smtp__User:-}
       Smtp__Password: ${Smtp__Password:-}
       Smtp__FromAddress: ${Smtp__FromAddress:-}
-      Smtp__ArchitectEmail: ${Smtp__ArchitectEmail:-}
       PhotoStorage__BasePath: /app/wwwroot/photos
       PhotoStorage__BaseUrl: ${PhotoStorage__BaseUrl:-/photos}
       Anthropic__ApiKey: ${Anthropic__ApiKey:-}
