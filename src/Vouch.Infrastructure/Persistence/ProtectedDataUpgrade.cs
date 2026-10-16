@@ -119,6 +119,8 @@ public sealed class ProtectedDataUpgrade(ApplicationDbContext db, AesEncryptionS
                         var plain = raw.StartsWith("vouch:", StringComparison.Ordinal) ? encryption.Decrypt(raw, column.Purpose)
                             : column.LegacyEncrypted && legacyCipherIdentity && raw.Length > 0 ? encryption.DecryptLegacy(raw) : raw;
                         if (column.Limit > 0 && plain.Length > column.Limit) throw new ArgumentException();
+                        if (group.Key == "PhotoAssets")
+                            _ = PhotoPayload.Decode(plain, reader.GetGuid(reader.GetOrdinal("OwnerId")), id, PhotoPayload.ColumnStage(column.Column));
                         if (ProtectedColumns.Json.Contains(column))
                         {
                             if (column.Column == "DeepValues")

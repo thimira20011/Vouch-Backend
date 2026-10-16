@@ -16,7 +16,8 @@ public record DailyMatchDto(
     IReadOnlyList<string> SharedDeepValues,
     IReadOnlyList<IntellectualInterest> SharedInterests,
     double CompatibilityScore,
-    MatchStatus Status
+    MatchStatus Status,
+    string? AbstractPhotoUrl = null
 );
 
 public record DailyReflectionDto(

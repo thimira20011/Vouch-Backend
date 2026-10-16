@@ -154,7 +154,7 @@ docker compose run --rm --no-deps backend --database-task seed
 docker compose up -d backend --wait
 ```
 
-This starts PostgreSQL on localhost:5432 and the API at `http://localhost:5000`. Compose sets the container connection string from the PostgreSQL settings. Schema setup and reference seeding are explicit commands. Database and photo volumes persist across restarts; changing `.env` does not change credentials in an already initialized database volume. Follow the [database operations guide](docs/database-operations.md) for backups, existing volumes, legacy upgrades and Architect provisioning.
+This starts PostgreSQL on localhost:5432 and the API at `http://localhost:5000`. Compose sets the container connection string from the PostgreSQL settings. Schema setup and reference seeding are explicit commands. The database volume includes encrypted photos and persists across restarts; changing `.env` does not change credentials in an already initialized database volume. Follow the [database operations guide](docs/database-operations.md) for backups, existing volumes, legacy upgrades and Architect provisioning.
 
 ### Running Locally with .NET CLI
 
@@ -206,7 +206,7 @@ For report evidence, paginated Architect review, atomic decisions and audited su
 
 For encrypted offline inboxes, Architect subscriptions, retryable report emails and deadline monitoring, follow [durable notifications](docs/durable-notifications.md). Apply the Step 12 migration before running this version. Production requires configured SMTP and enabled background jobs; development without SMTP retains alert emails as pending work.
 
-`.env.example` documents CORS browser origins, SMTP/Anthropic configuration and photo settings. Configure SMTP before testing live verification/alerts. Empty Anthropic key uses curated fallback prompts. Local photo storage defaults to `wwwroot/photos`; Compose mounts a persistent photo volume. Photos require authenticated retrieval at `/photos`; durable encrypted storage and intermediate reveal variants remain Step 13 work.
+`.env.example` documents CORS browser origins, SMTP/Anthropic configuration and photo settings. Configure SMTP before testing live verification/alerts. Empty Anthropic key uses curated fallback prompts. Optional photos are stored encrypted in PostgreSQL with abstract, 25%, 60% and original variants. Every `/photos` request checks the current session, campus, blocks and earned conversation stage. See [private photos](docs/private-photos.md) for upload limits, client integration and legacy-file handling.
 
 For deployment, provide secrets through the environment or a secret manager, set the Production environment and supply real HTTPS browser origins. Complete the explicit database upgrade before starting replicas. The old `Database__SeedOnStartup` flag is no longer used. The roadmap records remaining production work. If fixed credentials from earlier versions were deployed, rotate them using the explicit reviewed admin-password operation; this implementation does not alter any live credentials or encryption keys.
 

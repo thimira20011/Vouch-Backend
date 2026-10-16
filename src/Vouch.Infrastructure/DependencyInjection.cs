@@ -56,9 +56,8 @@ public static class DependencyInjection
         services.AddScoped<INotificationService, NotificationService>();
         services.AddHealthChecks().AddCheck<NotificationDeliveryHealthCheck>("notification-email-deadlines", tags: ["notifications"]);
 
-        // Step 21: Photo storage service (REQ-17)
-        // Default: local disk under wwwroot/photos/. Override with cloud impl for production.
-        services.AddSingleton<IPhotoStorageService, LocalPhotoStorageService>();
+        services.AddSingleton<PhotoProcessingService>();
+        services.AddScoped<IPhotoStorageService, DatabasePhotoStorageService>();
 
         // AI Wingman with HttpClient
         services.AddHttpClient<IAiWingmanService, AnthropicAiWingmanService>();

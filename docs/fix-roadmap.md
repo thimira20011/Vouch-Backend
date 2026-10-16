@@ -24,7 +24,7 @@ This roadmap covers the defects identified in the review and the remaining SRS w
 | 10 | Correct vouch submission, counters and peer requests | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
 | 11 | Correct moderation decisions and report review | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
 | 12 | Durable alerts and email deadlines | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
-| 13 | Private durable photos and staged reveal | Pending |
+| 13 | Private durable photos and staged reveal | Implemented; real-photo frontend/Alpine acceptance pending |
 | 14 | Complete account deletion within its deadline | Pending |
 | 15 | Idempotent, concurrent-safe match acceptance | Pending |
 | 16 | Reliable daily generation and cache invalidation | Pending |
@@ -360,3 +360,19 @@ Verification:
 - The temporary API returned 200 `Healthy` and anonymous inbox/delivery-status requests returned 401, then was stopped. No production database, live email delivery or application-key change was performed. SMTP tests used an injected sender, not real mailboxes; actual provider acceptance and deployment monitoring remain operator checks.
 
 Next implementation step: Step 13, private photo storage and visual reveal. Deletion deadlines, deployment performance and frontend acceptance remain their later numbered steps.
+
+## Step 13 change record — 16 October 2026
+
+Optional photos now use the existing PostgreSQL database, as selected by the user. A current generation stores four AES-GCM encrypted, owner/generation/stage-bound JPEG payloads. Uploads apply orientation, remove metadata, normalize size/color/transparency and generate artistic abstract, 25%, 60% and original images. Native processing and multipart memory/size limits avoid plaintext image-cache files. The user approved the synthetic portrait's reveal progression; real-photo frontend acceptance remains pending.
+
+Every retrieval checks the current bearer session, verified onboarding, account status, campus, symmetric blocks and earned conversation stage. Only current Pending/Accepted daily matches permit abstract previews without a conversation. Higher URL variants cannot bypass the stage; Architects have no bypass. Masked reads project only the authorized encrypted column. Conversation DTOs use the actual stage; cached match photo pointers refresh after replacement/deletion. Replacement and optional-photo removal are atomic, invalidate old generations and leave one or zero rows; owner deletion cascades the asset. See [private photos](private-photos.md) for the client contract, limits, legacy plaintext-file handling and remaining acceptance.
+
+Verification:
+
+- Full Release suite on disposable PostgreSQL 17.11: **261 passed** (77 unit, 184 integration), zero failed/skipped. After the final streamed-upload error handling and four additional upload-limit cases, all **37 photo checks passed** (15 unit, 22 integration). The resulting suite contains 265 cases; the final focused run covers every changed photo path.
+- Tests cover all four stage bytes/URLs, session/campus/block/Architect restrictions, current match preview expiry, incubation/unverified/suspended/deletion-requested accounts, archived earned reveal, unknown stages, concurrent replacement, injected insert-failure rollback, invalid-upload preservation, encrypted raw storage, copied-owner binding rejection, masked reads without original decryption, key rotation, restart, deletion cascade, legacy URLs and optional photos.
+- Final Release build passed with zero warnings/errors; publish excluded local settings and legacy photos. EF reported no pending model changes; migration SQL was reviewed. Docker is unavailable locally; the Alpine processor target remains configured in CI and has not been executed locally.
+- Verified a fresh encrypted Supabase public-schema backup by decrypting, restoring and upgrading a generated loopback copy. Applied `20261016152507_PrivateDatabasePhotos` to Supabase development; inspection recognized nine migrations without issues, collisions or rewrites. Counts remain four campuses, six reflections and 50 icebreakers; users/invites/vouches/requests/reports/audits/notifications/receipts/photos remain zero. No production database, credentials or application keys were changed.
+- The temporary development API returned 200 `Healthy`, onboarding options 200 and anonymous photo/metadata requests 401, then was stopped. No real photo uploads, user accounts or emails were created in development by these checks.
+
+Next implementation step: Step 14, account-deletion deadlines and retry/completion evidence. Real-photo frontend and deployment performance/operational acceptance remain later checks.

@@ -11,7 +11,7 @@ using Vouch.Domain.Entities;
 
 namespace Vouch.IntegrationTests.Infrastructure;
 
-public sealed class VouchApiFactory(string connection, Dictionary<string, string?>? overrides = null) : WebApplicationFactory<Program>
+public sealed class VouchApiFactory(string connection, Dictionary<string, string?>? overrides = null, bool enablePhotos = false) : WebApplicationFactory<Program>
 {
     public MutableTimeProvider Clock { get; } = new();
     public const string SigningKey = "integration-test-signing-key-only-48-characters-long";
@@ -40,7 +40,7 @@ public sealed class VouchApiFactory(string connection, Dictionary<string, string
         {
             services.RemoveAll<IEmailService>();
             services.RemoveAll<IAiWingmanService>();
-            services.RemoveAll<IPhotoStorageService>();
+            if (!enablePhotos) services.RemoveAll<IPhotoStorageService>();
             services.RemoveAll<IVerificationEmailSender>();
             services.RemoveAll<TimeProvider>();
             services.AddSingleton<TimeProvider>(Clock);
@@ -48,7 +48,7 @@ public sealed class VouchApiFactory(string connection, Dictionary<string, string
             services.AddSingleton<IEmailService>(sp => sp.GetRequiredService<RecordingEmailService>());
             services.AddSingleton<IVerificationEmailSender>(sp => sp.GetRequiredService<RecordingEmailService>());
             services.AddSingleton<IAiWingmanService, TestWingmanService>();
-            services.AddSingleton<IPhotoStorageService, DisabledPhotoStorage>();
+            if (!enablePhotos) services.AddSingleton<IPhotoStorageService, DisabledPhotoStorage>();
             services.AddTransient<IStartupFilter, TestClientAddressFilter>();
         });
     }
@@ -116,4 +116,8 @@ public sealed class DisabledPhotoStorage : IPhotoStorageService
 {
     public Task<(string OriginalUrl, string AbstractUrl)> StorePhotoAsync(Guid userId, Stream stream, string contentType, CancellationToken ct = default)
         => throw new InvalidOperationException("Photo uploads are disabled in this API smoke-test harness.");
+    public Task<byte[]?> ReadPhotoAsync(Guid viewerId, Guid ownerId, Guid generationId, Vouch.Domain.Enums.RevealClarityStage stage, CancellationToken ct = default)
+        => throw new InvalidOperationException("Photo access is disabled in this test harness.");
+    public Task DeletePhotoAsync(Guid userId, CancellationToken ct = default)
+        => throw new InvalidOperationException("Photo deletion is disabled in this test harness.");
 }

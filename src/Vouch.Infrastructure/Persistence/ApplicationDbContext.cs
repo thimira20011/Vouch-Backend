@@ -125,6 +125,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<Report> Reports => Set<Report>();
     public DbSet<ModerationAudit> ModerationAudits => Set<ModerationAudit>();
     public DbSet<Notification> Notifications => Set<Notification>();
+    public DbSet<PhotoAsset> PhotoAssets => Set<PhotoAsset>();
     public DbSet<NotificationReceipt> NotificationReceipts => Set<NotificationReceipt>();
     public DbSet<Block> Blocks => Set<Block>();
     public DbSet<IcebreakerPrompt> Icebreakers => Set<IcebreakerPrompt>();
@@ -287,6 +288,11 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
         });
 
         // Report Configuration
+        modelBuilder.Entity<PhotoAsset>(b =>
+        {
+            b.HasOne(p => p.Owner).WithOne().HasForeignKey<PhotoAsset>(p => p.OwnerId).OnDelete(DeleteBehavior.Cascade);
+            b.Property(p => p.ProcessingVersion).HasMaxLength(32);
+        });
         modelBuilder.Entity<Notification>(b =>
         {
             b.HasOne<Campus>().WithMany().HasForeignKey(n => n.CampusId).OnDelete(DeleteBehavior.Cascade);

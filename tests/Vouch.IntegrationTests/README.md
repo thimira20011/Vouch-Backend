@@ -39,7 +39,7 @@ Use `-Filter 'FullyQualifiedName~VouchingTests'` for a focused regression run; o
 ## Test boundaries
 
 - The host uses the Testing environment. Development-only local JSON is ignored, startup reference-data seeding is disabled and the three business background workers are disabled.
-- SMTP, AI and photo-storage services are replaced by test implementations. No real email or provider calls occur. Photo-authorization cases write synthetic bytes only into their own generated temporary directory and remove it afterward; application/development photo storage is never used.
+- SMTP and AI use test implementations; most tests disable photos. Photo cases opt into the real processor and encrypted database storage using synthetic images in the generated disposable database. No real email, AI provider, Supabase or development-photo access occurs.
 - A test-only startup filter simulates client socket addresses for rate-limit/proxy tests. It is defined only in the test project and is never registered in the production API.
 - Configuration tests also verify local/environment/CLI precedence, deployment ignoring local JSON, database-target guards and spoofed-header behavior.
 - Happy-path login after registration now runs alongside concurrent normalized duplicates, maximum Unicode fields, protected raw storage and readable authorized match/message/trust/moderation DTOs. No login test remains skipped.
@@ -52,6 +52,8 @@ Use `-Filter 'FullyQualifiedName~VouchingTests'` for a focused regression run; o
 - Moderation cases cover concurrent/idempotent decisions, the inclusive resolution-time 90-day boundary, immediate third-report suspension and session revocation, final-pending visibility, complete paginated queues, current campus restrictions on reports and related audits, message evidence linkage, manual suspension/reinstatement, encrypted immutable audit reasons, relational cleanup and upgrade from the previous schema. An injected audit insert failure verifies rollback of the report, suspension, totals and database session revocation.
 
 - Notification cases cover report/vouch/nudge transaction rollback, offline restart recovery, inbox ownership/pagination/read receipts, actual Architect subscription authorization, source campus/block changes, concurrent leases, cancellation recovery, per-recipient SMTP retry, controlled outage recovery within one hour, overdue health/recovery history, cascade cleanup and previous-schema upgrade. Email is always an injected fake; tests never send real messages. Upgrade tests reject altered pending-work index predicates as well as altered request predicates.
+
+- Photo cases use real synthetic-image processing and encrypted PostgreSQL storage. They cover all reveal stages, direct URL attempts, current daily preview expiry, stranger/Architect/campus/block restrictions, account-state changes, cached pointers, concurrent replacement and injected-write rollback, invalid/oversized multipart uploads, ciphertext binding, selective decryption, key rotation, restart, optional photos and account cascade cleanup. Native processing tests also cover format signatures, nonseekable input, dimensions, cancellation, orientation and metadata removal.
 
 To run just the unit suite without PostgreSQL:
 

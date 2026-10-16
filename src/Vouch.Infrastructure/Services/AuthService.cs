@@ -174,14 +174,7 @@ public class AuthService(ApplicationDbContext context, IPasswordHasher passwordH
 
     public async Task<(string OriginalUrl, string AbstractUrl)> UploadPhotoAsync(Guid userId, Stream stream, string contentType, CancellationToken ct = default)
     {
-        var user = await context.Users.SingleOrDefaultAsync(u => u.Id == userId, ct) ?? throw new KeyNotFoundException("User not found.");
-        EnsureAccountUsable(user);
-        if (!UniversityIdentity.IsOnboarded(user)) throw new EligibilityException("Complete verified onboarding before uploading a photo.");
-        var urls = await photoStorage.StorePhotoAsync(userId, stream, contentType, ct);
-        user.OriginalPhotoUrl = urls.OriginalUrl;
-        user.OilPaintingAbstractPhotoUrl = urls.AbstractUrl;
-        await context.SaveChangesAsync(ct);
-        return urls;
+        return await photoStorage.StorePhotoAsync(userId, stream, contentType, ct);
     }
 
     public async Task RequestAccountDeletionAsync(Guid userId, CancellationToken ct = default)

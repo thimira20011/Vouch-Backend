@@ -2,6 +2,8 @@
 
 Reviewed: 1 October 2026 (Asia/Colombo). Repository baseline: `79af63a`.
 
+Implementation follow-up: this document preserves the original review findings. Current completion status and verification records are maintained in [the fix roadmap](fix-roadmap.md). Step 13 now implements [private database photos and staged reveal](private-photos.md), with synthetic visual progression approved; real-photo frontend and deployment acceptance remain outstanding.
+
 ## Assessment
 
 Your recollection is supported by the commit history: the latest commit implements Phase 5, Steps 22–24. Most work from Phases 1–5 exists in code. However, presence of a feature does not mean it meets the SRS or works end to end. Several earlier steps need correction before the project can move safely into release testing.

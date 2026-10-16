@@ -20,6 +20,7 @@ public interface IApplicationDbContext
     DbSet<Report> Reports { get; }
     DbSet<ModerationAudit> ModerationAudits { get; }
     DbSet<Notification> Notifications { get; }
+    DbSet<PhotoAsset> PhotoAssets { get; }
     DbSet<NotificationReceipt> NotificationReceipts { get; }
     DbSet<Block> Blocks { get; }
     DbSet<IcebreakerPrompt> Icebreakers { get; }

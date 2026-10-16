@@ -83,6 +83,12 @@ Applied `20261014041109_DurableNotificationDelivery` after reviewing `.test-runt
 
 Post-upgrade inspection recognized eight migrations with no issues, collisions or rows needing rewrite. Counts remained four campuses, six reflections and 50 icebreakers, with zero users/invites/vouches/requests/reports/audits/notifications/receipts. The temporary API returned 200 `Healthy`, and anonymous notification inbox/delivery-status requests returned 401, then was stopped. No emails or test accounts were created. Keep Data API disabled and follow [durable notifications](durable-notifications.md) for inbox/subscription integration and SMTP setup. Missing Development SMTP keeps alert emails pending; real provider acceptance still needs validation.
 
+## Step 13 development upgrade — 16 October 2026
+
+Applied `20261016152507_PrivateDatabasePhotos` after reviewing `.test-runtime/step13-upgrade.sql` and verifying a fresh encrypted backup/restore rehearsal. The Git-ignored archive is `.test-runtime/supabase-step13-backup-1dd1c0fa6e884e4e9dd7702b948c1b66/source.dump.dpapi`, protected with Windows CurrentUser DPAPI. Decryption, local restore and upgrade from eight to nine migrations passed before the hosted upgrade. Recovery requires the same Windows profile's DPAPI material and the matching application keys. Temporary plaintext dump/password files were removed.
+
+Post-upgrade inspection recognized nine migrations without issues, collisions or rewrites. Counts remain four campuses, six reflections and 50 icebreakers, with zero users/invites/vouches/requests/reports/audits/notifications/receipts/photos. The temporary API returned 200 `Healthy`, onboarding options 200 and anonymous photo/metadata requests 401, then was stopped. No test accounts, real photos or emails were created. Keep Data API disabled. [Private photos](private-photos.md) documents the authenticated staged-image contract and database backup implications. No Supabase Storage bucket or new storage credentials are needed.
+
 ## Production cutover
 
 Create a separate production database and choose its backup/retention/connection capacity for the workload. Apply the same checked-in migrations and reference seeds through explicit deployment commands; provision the production Architect securely. Configure production connection/TLS, SMTP, CORS and secret-manager values, then verify readiness and the user journey before directing clients to it.

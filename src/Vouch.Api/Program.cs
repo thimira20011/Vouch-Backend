@@ -41,7 +41,12 @@ if (builder.Environment.IsProduction())
 }
 var configuredPhotoUrl = builder.Configuration["PhotoStorage:BaseUrl"];
 if (!string.IsNullOrWhiteSpace(configuredPhotoUrl) && configuredPhotoUrl != "/photos")
-    throw new InvalidOperationException("PhotoStorage:BaseUrl must be /photos for authorized local photo retrieval.");
+    throw new InvalidOperationException("PhotoStorage:BaseUrl must be /photos for authorized photo retrieval.");
+builder.Services.Configure<Microsoft.AspNetCore.Http.Features.FormOptions>(options =>
+{
+    options.MemoryBufferThreshold = PhotoProcessingService.MaxUploadBytes + 1024;
+    options.MultipartBodyLengthLimit = PhotoProcessingService.MaxUploadBytes;
+});
 
 // 1. Add Infrastructure Services (EF Core PostgreSQL, SignalR, Security, Domain Services)
 builder.Services.AddInfrastructure(builder.Configuration);

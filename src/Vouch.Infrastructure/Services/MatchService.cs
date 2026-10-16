@@ -38,7 +38,12 @@ public class MatchService : IMatchService
                 await _context.Users.CountAsync(u => (u.Id == userId || u.Id == cached.Match.MatchedUserId) && !u.IsSoftHiddenFromMatchmaking, ct) == 2 &&
                 await _context.Matches.AnyAsync(m => m.Id == cached.Match.MatchId && m.CycleDate == today &&
                     (m.UserAId == userId && m.UserBId == cached.Match.MatchedUserId || m.UserBId == userId && m.UserAId == cached.Match.MatchedUserId) &&
-                    m.UserA.CampusId == m.CampusId && m.UserB.CampusId == m.CampusId, ct)) return cached;
+                    m.UserA.CampusId == m.CampusId && m.UserB.CampusId == m.CampusId, ct))
+            {
+                if (cached.Match is null) return cached;
+                var currentPhoto = await _context.Users.Where(u => u.Id == cached.Match.MatchedUserId).Select(u => u.OriginalPhotoUrl).SingleAsync(ct);
+                return cached with { Match = cached.Match with { AbstractPhotoUrl = PhotoUrls.ForStage(currentPhoto, cached.Match.MatchedUserId, RevealClarityStage.Abstract0) } };
+            }
             _cache.Remove(cacheKey);
         }
 
@@ -79,7 +84,8 @@ public class MatchService : IMatchService
                 SharedDeepValues: sharedValues,
                 SharedInterests: sharedInterests,
                 CompatibilityScore: existingMatch.CompatibilityScore,
-                Status: existingMatch.Status
+                Status: existingMatch.Status,
+                AbstractPhotoUrl: PhotoUrls.ForStage(matchedUser.OriginalPhotoUrl, matchedUser.Id, RevealClarityStage.Abstract0)
             );
 
             var matchResult = new TodayConnectionResponse(HasMatch: true, Match: matchDto, Reflection: null);

@@ -31,7 +31,6 @@ public sealed class SessionsAndAccessTests(PostgresFixture postgres) : IAsyncLif
     private Conversation _conversation = null!;
     private Guid _foreignCampus;
     private int _clientNumber;
-    private string _photoRoot = null!;
     private const string Password = "SessionTestPassword123!";
 
     public async Task InitializeAsync()
@@ -57,15 +56,9 @@ public sealed class SessionsAndAccessTests(PostgresFixture postgres) : IAsyncLif
         db.Conversations.Add(_conversation);
         db.Matches.Add(new DailyMatch { CampusId = first.Id, UserAId = _alice.Id, UserBId = _bob.Id, CycleDate = DateOnly.FromDateTime(DateTime.UtcNow) });
         await db.SaveChangesAsync();
-        _photoRoot = Path.Combine(Path.GetTempPath(), "vouch-private-photos-" + Guid.NewGuid().ToString("N"));
-        Directory.CreateDirectory(_photoRoot);
-        _factory = new(postgres.Database.ConnectionString, new() { ["PhotoStorage:BasePath"] = _photoRoot });
+        _factory = new(postgres.Database.ConnectionString, enablePhotos: true);
     }
-    public async Task DisposeAsync()
-    {
-        await _factory.DisposeAsync();
-        Directory.Delete(_photoRoot, recursive: true);
-    }
+    public async Task DisposeAsync() => await _factory.DisposeAsync();
     private HttpClient Client(string? token = null)
     {
         var client = _factory.Client($"198.51.100.{Interlocked.Increment(ref _clientNumber)}");
@@ -280,21 +273,19 @@ public sealed class SessionsAndAccessTests(PostgresFixture postgres) : IAsyncLif
     [Fact]
     public async Task PhotosRequireSessionCampusBlockAndFullRevealForOriginal()
     {
-        Directory.CreateDirectory(Path.Combine(_photoRoot, "original"));
-        Directory.CreateDirectory(Path.Combine(_photoRoot, "abstract"));
-        byte[] image = [0xff, 0xd8, 0xff, 0xd9];
-        await File.WriteAllBytesAsync(Path.Combine(_photoRoot, "original", $"{_bob.Id:N}.jpg"), image);
-        await File.WriteAllBytesAsync(Path.Combine(_photoRoot, "abstract", $"{_bob.Id:N}.jpg"), image);
-        var original = $"/photos/original/{_bob.Id:N}.jpg"; var abstractUrl = $"/photos/abstract/{_bob.Id:N}.jpg";
+        using var image = new ImageMagick.MagickImage(ImageMagick.MagickColors.CadetBlue, 80, 80);
+        using var stream = new MemoryStream(image.ToByteArray(ImageMagick.MagickFormat.Png));
+        await using var scope = _factory.Services.CreateAsyncScope();
+        var urls = await scope.ServiceProvider.GetRequiredService<IPhotoStorageService>().StorePhotoAsync(_bob.Id, stream, "image/png");
+        var original = urls.OriginalUrl; var abstractUrl = urls.AbstractUrl;
         await using var db = postgres.CreateContext();
-        await db.Users.Where(u => u.Id == _bob.Id).ExecuteUpdateAsync(s => s.SetProperty(u => u.OriginalPhotoUrl, original).SetProperty(u => u.OilPaintingAbstractPhotoUrl, abstractUrl));
         using var anonymous = Client();
         Assert.Equal(HttpStatusCode.Unauthorized, (await anonymous.GetAsync(original)).StatusCode);
         using var alice = Client((await LoginAsync(_alice)).Token);
         Assert.Equal(HttpStatusCode.Forbidden, (await alice.GetAsync(original)).StatusCode);
         var abstractResponse = await alice.GetAsync(abstractUrl);
         Assert.Equal(HttpStatusCode.OK, abstractResponse.StatusCode);
-        Assert.Equal(image, await abstractResponse.Content.ReadAsByteArrayAsync());
+        Assert.Equal((byte)0xff, (await abstractResponse.Content.ReadAsByteArrayAsync())[0]);
         Assert.Equal("image/jpeg", abstractResponse.Content.Headers.ContentType!.MediaType);
         Assert.True(abstractResponse.Headers.CacheControl!.NoStore);
         await db.Conversations.Where(c => c.Id == _conversation.Id).ExecuteUpdateAsync(s => s.SetProperty(c => c.CurrentClarityStage, RevealClarityStage.Full100));

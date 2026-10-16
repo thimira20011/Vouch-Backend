@@ -651,6 +651,56 @@ namespace Vouch.Infrastructure.Persistence.Migrations
                     b.ToTable("VouchRequests");
                 });
 
+            modelBuilder.Entity("Vouch.Domain.Entities.PhotoAsset", b =>
+                {
+                    b.Property<Guid>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("AbstractJpeg")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Height")
+                        .HasColumnType("bigint");
+
+                    b.Property<string>("OriginalJpeg")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<Guid>("OwnerId")
+                        .HasColumnType("uuid");
+
+                    b.Property<string>("ProcessingVersion")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("character varying(32)");
+
+                    b.Property<string>("QuarterJpeg")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<string>("SixtyJpeg")
+                        .IsRequired()
+                        .HasColumnType("text");
+
+                    b.Property<DateTimeOffset?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<long>("Width")
+                        .HasColumnType("bigint");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("OwnerId")
+                        .IsUnique();
+
+                    b.ToTable("PhotoAssets");
+                });
+
             modelBuilder.Entity("Vouch.Domain.Entities.RefreshToken", b =>
                 {
                     b.Property<Guid>("Id")
@@ -1138,6 +1188,17 @@ namespace Vouch.Infrastructure.Persistence.Migrations
                     b.Navigation("RequestedVoucher");
 
                     b.Navigation("Requester");
+                });
+
+            modelBuilder.Entity("Vouch.Domain.Entities.PhotoAsset", b =>
+                {
+                    b.HasOne("Vouch.Domain.Entities.User", "Owner")
+                        .WithOne()
+                        .HasForeignKey("Vouch.Domain.Entities.PhotoAsset", "OwnerId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Owner");
                 });
 
             modelBuilder.Entity("Vouch.Domain.Entities.RefreshToken", b =>

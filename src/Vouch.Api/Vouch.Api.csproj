@@ -22,6 +22,7 @@
     <ProjectReference Include="..\Vouch.Infrastructure\Vouch.Infrastructure.csproj" />
     <ProjectReference Include="..\Vouch.Application\Vouch.Application.csproj" />
     <Content Update="appsettings.Local.json" CopyToOutputDirectory="Never" CopyToPublishDirectory="Never" />
+    <Content Remove="wwwroot/photos/**" />
   </ItemGroup>
 
 </Project>

@@ -139,9 +139,8 @@ public class MessagingService : IMessagingService
         {
             var otherUser = c.UserAId == userId ? c.UserB : c.UserA;
             // Reveal photo depending on stage (REQ-17)
-            var photoToDisplay = c.CurrentClarityStage == RevealClarityStage.Full100
-                ? otherUser.OriginalPhotoUrl
-                : otherUser.OilPaintingAbstractPhotoUrl;
+            var photoToDisplay = Enum.IsDefined(c.CurrentClarityStage)
+                ? PhotoUrls.ForStage(otherUser.OriginalPhotoUrl, otherUser.Id, c.CurrentClarityStage) : null;
 
             return new ConversationDto(
                 Id: c.Id,
