@@ -18,7 +18,7 @@ Serialize refresh attempts per session on the client, replace both credentials t
 
 Every protected HTTP request verifies the session, current account status, role and campus against PostgreSQL. Only Active and InIncubation accounts can authenticate. Incubating users retain identity, mailbox verification, onboarding, their own trust summary, safety reporting/blocking and deletion actions; active workflows require verified onboarding and Active status. Suspended/deletion-requested/missing accounts cannot use access JWTs or obtain replacement credentials.
 
-The migration adds a PostgreSQL trigger that permanently revokes sessions when status becomes unavailable or role, campus or password changes. Readiness rejects a missing/disabled trigger. Tracked changes also abort registered local connections. Direct database updates remain covered by the trigger and fresh access checks. Restoring Active status does not revive old sessions. Used refresh evidence and sessions cascade when an account is removed; the broader deletion deadline and storage cleanup remain Step 14.
+The migration adds a PostgreSQL trigger that permanently revokes sessions when status becomes unavailable or role, campus or password changes. Readiness rejects a missing/disabled trigger. Tracked changes also abort registered local connections. Direct database updates remain covered by the trigger and fresh access checks. Restoring Active status does not revive old sessions. Step 14 makes a recorded deletion request terminal and preserves its original timestamp. Used refresh evidence and sessions cascade on removal; [account deletion](account-deletion.md) documents prompt cleanup, deadlines, retries and restore safety.
 
 ## Resource rules
 

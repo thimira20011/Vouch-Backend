@@ -8,15 +8,15 @@ This is the working checklist for what we have completed and what remains. Step 
 
 | Area | Status |
 |---|---|
-| Backend Steps 1–13 | Implemented; remaining environment/product acceptance checks are listed below |
-| Backend Steps 14–20 | Remaining implementation and correctness work |
+| Backend Steps 1–14 | Implemented; remaining environment/product acceptance checks are listed below |
+| Backend Steps 15–20 | Remaining implementation and correctness work |
 | Steps 21–22 | Remaining production readiness, frontend acceptance and pilot work |
-| Next implementation step | **Step 14 — account-deletion deadline** |
+| Next implementation step | **Step 15 — idempotent match acceptance** |
 | Public launch | Not ready; remaining implementation and acceptance must be completed |
 
 `[x]` means the stated work is implemented or supported by recorded verification. `[ ]` means work or acceptance remains. A completed backend task does not establish production or frontend acceptance.
 
-This checklist summarizes the repository and recorded work through commit `a888c48` (16 October 2026). Historical test/database results below were not rerun on 21 October.
+Step 13 was recorded at `a888c48` (16 October 2026). Step 14 is implemented on **`feature/step-14-account-deletion`** (21 October 2026); its migration is prepared for deployment, while shared Supabase development remains at Step 13. Historical Step 13 results below retain their original verification date.
 
 ## Completed backend work
 
@@ -33,8 +33,9 @@ This checklist summarizes the repository and recorded work through commit `a888c
 - [x] **Step 11 — Moderation decisions and report review.** Added atomic/idempotent decisions, suspension on the third qualifying upheld report, evidence checks, paginated campus queues, encrypted audits and manual suspension/reinstatement.
 - [x] **Step 12 — Durable notifications and email deadlines.** Added transactional encrypted notification records, offline inbox/read receipts, authorized Architect alerts, leased retries, per-recipient receipts and one-hour report-email deadline monitoring.
 - [x] **Step 13 — Private photos and staged reveal.** Added encrypted PostgreSQL storage, metadata removal, abstract/25%/60%/original variants, viewer/stage authorization, atomic replacement/removal, account cascade cleanup and current DTO photo URLs. The synthetic portrait progression was approved.
+- [x] **Step 14 — Account deletion within its deadline.** Added a durable queue, immutable first request/deadline, immediate startup processing, concurrent-worker leases, transactional cleanup/retries, completion receipts, deadline health/status, bounded identifier/receipt retention and encrypted restore-ledger export/replay. Shared conversations and all their messages are deleted under the user-selected policy. See [account deletion](account-deletion.md).
 
-Feature guides: [identity/onboarding](identity-and-onboarding.md), [sessions/access](sessions-and-access.md), [vouches/requests](vouching-and-peer-requests.md), [moderation](moderation-review.md), [notifications](durable-notifications.md), [private photos](private-photos.md).
+Feature guides: [identity/onboarding](identity-and-onboarding.md), [sessions/access](sessions-and-access.md), [vouches/requests](vouching-and-peer-requests.md), [moderation](moderation-review.md), [notifications](durable-notifications.md), [private photos](private-photos.md), [account deletion](account-deletion.md).
 
 ## Completed development database and verification work
 
@@ -44,22 +45,26 @@ Feature guides: [identity/onboarding](identity-and-onboarding.md), [sessions/acc
 - [x] Took encrypted development backups, verified decryption, restored local copies and rehearsed upgrades before hosted changes.
 - [x] Recorded clean post-upgrade schema/protected-data inspection and API health checks on 16 October.
 - [x] Verified the final Step 13 Release build with zero warnings/errors and publish output without local secrets or legacy photo files.
-- [x] Passed the full Release suite at **261 tests** (77 unit, 184 integration), then passed **37 focused photo tests** after the last adjustment and four added upload cases. The resulting suite contains **265 cases**; a single full 265-case run is not recorded.
+- [x] Historical Step 13 verification: **261 full-suite tests** (77 unit, 184 integration), followed by **37 focused photo tests** after the last adjustment/four new cases. That version contained **265 cases**; no single full 265-case run was recorded at Step 13.
 - [x] Pushed the implementation through Step 13 to GitHub `main` at `a888c48`.
+- [x] Step 14 verification on 21 October: **287 full Release tests passed** (77 unit, 210 PostgreSQL/API integration), zero failed/skipped; final build had zero warnings/errors, publish excluded local secrets/legacy photos, and EF reported no pending model changes.
+- [x] Reviewed the Step 14 migration SQL and rehearsed nine-to-ten-migration upgrade/inspection on a restored Supabase backup, preserving reference counts and leaving the hosted source unchanged.
 
 The last recorded development counts were four campuses, six reflections and 50 icebreakers, with zero users, invites, vouches, requests, reports, audits, notifications, receipts and photos. These are historical verification results, not a live database inventory. See [Supabase development](supabase-development.md) and [database operations](database-operations.md).
 
-## Remaining implementation tasks
-
-### Step 14 — Complete account deletion within its deadline
+## Step 14 completion details
 
 - [x] Existing work provides transactional relational cleanup/trust reconciliation and a photo owner FK that cascades on physical deletion.
-- [ ] Preserve the first deletion-request timestamp; repeated requests must not extend the deadline.
-- [ ] Process requests promptly and track completion deadlines rather than waiting until day 30 to start.
-- [ ] Complete idempotent cleanup and retries for all user data, tokens, photos and invite PII; verify surviving trust/readiness totals.
-- [ ] Decide and document retention of a conversation partner's messages, including any anonymization policy.
-- [ ] Add controllable-clock deadline tests and injected-failure/retry tests proving completion before day 30.
-- [ ] Record completion evidence and backup/log retention handling.
+- [x] Preserve the first deletion-request timestamp; repeated/concurrent requests cannot extend the deadline or restore active status.
+- [x] Process on startup and every minute; track the original 30-day completion deadline.
+- [x] Clean account/content/token/photo/invite data atomically, retry failures and repair surviving trust/report/readiness totals.
+- [x] Record the selected policy: delete shared conversations and both participants' messages.
+- [x] Add controllable-clock deadline, cancellation/restart, concurrent-worker and injected-failure rollback/retry tests.
+- [x] Record completion/deadline evidence and document backup/log retention, encrypted restore replay and identifier expiry by the original deadline.
+- [ ] Apply `20261021175206_DurableAccountDeletion` to shared development when deploying the branch, following the reviewed upgrade procedure. This is deployment work; the shared database was not changed by implementation tests.
+- [ ] Complete production backup/log retention enforcement, alert routing and restore/outage drills in Step 21.
+
+## Remaining implementation tasks
 
 ### Step 15 — Make match acceptance idempotent and safe under concurrency
 

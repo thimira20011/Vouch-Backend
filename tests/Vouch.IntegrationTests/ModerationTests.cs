@@ -377,7 +377,7 @@ public sealed class ModerationTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task PreviousSchemaUpgradeBackfillsOnlyMissingDecisionTimesAndPreservesLegacySuspension()
     {
-        // Isolated fixture database only: downgrade empty audit schema, then exercise the real explicit upgrade.
+        // Seed a separate historical schema instead of downgrading through irreversible erasure.
         var created = Now.AddDays(-20); var preserved = Now.AddDays(-10);
         await using (var db = postgres.CreateContext())
         {
@@ -385,9 +385,13 @@ public sealed class ModerationTests(PostgresFixture postgres) : IAsyncLifetime
             db.Reports.AddRange(first, Report(_peers[1], ReportStatus.Dismissed, preserved), Report(_peers[2]));
             var target = await db.Users.SingleAsync(u => u.Id == _target.Id); target.Status = AccountStatus.Suspended;
             await db.SaveChangesAsync();
-            await db.GetService<IMigrator>().MigrateAsync("20261009213532_ConsistentVouchesAndPeerRequests");
         }
-        await using var upgraded = postgres.CreateContext();
+        await using var previous = new IsolatedPostgresDatabase(Environment.GetEnvironmentVariable("VOUCH_TEST_POSTGRES_ADMIN")!);
+        await previous.CreateAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(previous.ConnectionString).Options;
+        await using var upgraded = new ApplicationDbContext(options, PostgresFixture.Encryption, PostgresFixture.Lookup);
+        await upgraded.GetService<IMigrator>().MigrateAsync("20261009213532_ConsistentVouchesAndPeerRequests");
+        await PreviousSchemaData.CopyAsync(postgres, upgraded, "Campuses", "Users", "ProtectionStates", "Reports");
         var result = await new DatabaseUpgrade(upgraded, PostgresFixture.Encryption, PostgresFixture.Lookup).ApplyAsync(backupConfirmed: true);
         Assert.True(result.CanApply); Assert.Empty(await upgraded.Database.GetPendingMigrationsAsync());
         var reports = await upgraded.Reports.ToListAsync();
@@ -395,7 +399,11 @@ public sealed class ModerationTests(PostgresFixture postgres) : IAsyncLifetime
         Assert.Equal(preserved, reports.Single(r => r.Status == ReportStatus.Dismissed).ResolvedAt);
         Assert.Null(reports.Single(r => r.Status == ReportStatus.Pending).ResolvedAt);
         Assert.All(reports, r => Assert.Null(r.ResolvedByArchitectId)); Assert.Empty(await upgraded.ModerationAudits.ToListAsync());
-        var saved = await StoredAsync(); Assert.Equal(AccountStatus.Suspended, saved.Status); Assert.Null(saved.StatusBeforeSuspension); Assert.Null(saved.SuspendedAt);
-        await ChangeAsync(true); Assert.Equal(AccountStatus.InIncubation, (await StoredAsync()).Status);
+        var saved = await upgraded.Users.AsNoTracking().SingleAsync(u => u.Id == _target.Id);
+        Assert.Equal(AccountStatus.Suspended, saved.Status); Assert.Null(saved.StatusBeforeSuspension); Assert.Null(saved.SuspendedAt);
+        await using var historicalHost = new VouchApiFactory(previous.ConnectionString);
+        using var scope = historicalHost.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IModerationService>().ChangeSuspensionAsync(_architect.Id, _target.Id, true, new("Reviewed account evidence."));
+        Assert.Equal(AccountStatus.InIncubation, (await upgraded.Users.AsNoTracking().SingleAsync(u => u.Id == _target.Id)).Status);
     }
 }

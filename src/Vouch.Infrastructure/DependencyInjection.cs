@@ -55,6 +55,8 @@ public static class DependencyInjection
         services.AddScoped<NotificationDispatcher>();
         services.AddScoped<INotificationService, NotificationService>();
         services.AddHealthChecks().AddCheck<NotificationDeliveryHealthCheck>("notification-email-deadlines", tags: ["notifications"]);
+        services.AddScoped<AccountDeletionProcessor>();
+        services.AddHealthChecks().AddCheck<AccountDeletionHealthCheck>("account-deletion-deadlines", tags: ["privacy"]);
 
         services.AddSingleton<PhotoProcessingService>();
         services.AddScoped<IPhotoStorageService, DatabasePhotoStorageService>();
@@ -79,7 +81,7 @@ public static class DependencyInjection
         {
             services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.NotificationDeliveryWorker>();
             services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.ConversationInactivityWorker>();
-            // AccountDeletionWorker: 01:05 UTC — hard-delete accounts with DeletionRequested > 30 days (NFR-6)
+            // AccountDeletionWorker: immediate startup pass, then every minute (NFR-6).
             services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.AccountDeletionWorker>();
             // Step 23: DailyMatchGenerationWorker: 00:05 UTC — generate matches for all active campuses
             services.AddHostedService<Vouch.Infrastructure.BackgroundJobs.DailyMatchGenerationWorker>();

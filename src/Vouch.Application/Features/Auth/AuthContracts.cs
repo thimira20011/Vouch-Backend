@@ -21,6 +21,8 @@ public record LoginRequest(
 public record VerifyEmailRequest(string Token);
 public record RefreshRequest(string RefreshToken);
 public record IdentityStatusResponse(bool EmailVerified, bool OnboardingCompleted, string Status);
+public record AccountDeletionResponse(Guid RequestId, DateTimeOffset RequestedAt, DateTimeOffset DeadlineAt);
+public record AccountDeletionStatus(int Pending, int AtRisk, int Overdue, int Completed, int MissedDeadlines);
 
 public record CompleteOnboardingRequest(
     string Bio,
@@ -54,5 +56,5 @@ public interface IAuthService
     Task<IdentityStatusResponse> GetIdentityStatusAsync(Guid userId, CancellationToken ct = default);
     Task CompleteOnboardingAsync(Guid userId, CompleteOnboardingRequest request, CancellationToken ct = default);
     Task<(string OriginalUrl, string AbstractUrl)> UploadPhotoAsync(Guid userId, Stream stream, string contentType, CancellationToken ct = default); // Step 21 REQ-17
-    Task RequestAccountDeletionAsync(Guid userId, CancellationToken ct = default); // NFR-6
+    Task<AccountDeletionResponse> RequestAccountDeletionAsync(Guid userId, CancellationToken ct = default); // NFR-6
 }

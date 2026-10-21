@@ -126,6 +126,7 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     public DbSet<ModerationAudit> ModerationAudits => Set<ModerationAudit>();
     public DbSet<Notification> Notifications => Set<Notification>();
     public DbSet<PhotoAsset> PhotoAssets => Set<PhotoAsset>();
+    public DbSet<AccountDeletion> AccountDeletions => Set<AccountDeletion>();
     public DbSet<NotificationReceipt> NotificationReceipts => Set<NotificationReceipt>();
     public DbSet<Block> Blocks => Set<Block>();
     public DbSet<IcebreakerPrompt> Icebreakers => Set<IcebreakerPrompt>();
@@ -134,6 +135,16 @@ public class ApplicationDbContext : DbContext, IApplicationDbContext
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
+        modelBuilder.Entity<AccountDeletion>(b =>
+        {
+            b.HasOne<Campus>().WithMany().HasForeignKey(d => d.CampusId).OnDelete(DeleteBehavior.Cascade);
+            b.HasOne<User>().WithMany().HasForeignKey(d => d.UserId).OnDelete(DeleteBehavior.SetNull);
+            b.HasIndex(d => d.UserId).IsUnique();
+            b.HasIndex(d => new { d.NextAttemptAt, d.LeaseUntil }).HasFilter("\"CompletedAt\" IS NULL");
+            b.HasIndex(d => new { d.CampusId, d.RequestedAt });
+            b.Property(d => d.LastErrorCode).HasMaxLength(40);
+            b.Property(d => d.PolicyVersion).HasMaxLength(32);
+        });
         modelBuilder.Entity<AuthSession>(b =>
         {
             b.HasOne(s => s.User).WithMany().HasForeignKey(s => s.UserId).OnDelete(DeleteBehavior.Cascade);

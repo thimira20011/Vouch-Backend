@@ -89,6 +89,12 @@ Applied `20261016152507_PrivateDatabasePhotos` after reviewing `.test-runtime/st
 
 Post-upgrade inspection recognized nine migrations without issues, collisions or rewrites. Counts remain four campuses, six reflections and 50 icebreakers, with zero users/invites/vouches/requests/reports/audits/notifications/receipts/photos. The temporary API returned 200 `Healthy`, onboarding options 200 and anonymous photo/metadata requests 401, then was stopped. No test accounts, real photos or emails were created. Keep Data API disabled. [Private photos](private-photos.md) documents the authenticated staged-image contract and database backup implications. No Supabase Storage bucket or new storage credentials are needed.
 
+## Step 14 branch rehearsal — 21 October 2026
+
+On `feature/step-14-account-deletion`, reviewed `.test-runtime/step14-upgrade.sql` and verified an encrypted public-schema backup by decrypting it, restoring a generated loopback-only database and upgrading that copy from nine to ten migrations. Inspection recognized `20261021175206_DurableAccountDeletion` without issues, collisions or rewrites. Reference counts stayed at four campuses, six reflections and 50 icebreakers, with zero users/invites. The source Supabase database was not upgraded and remains at Step 13.
+
+The Git-ignored archive is `.test-runtime/supabase-step14-backup-f8ad3b2537dc4108b9ff1135228ac24e/source.dump.dpapi`, protected with Windows CurrentUser DPAPI. Recovery requires the same Windows profile's DPAPI material and matching application keys; temporary plaintext/password files were removed. Apply the migration through the explicit reviewed upgrade procedure when deploying the branch. Production acceptance must also enforce the [deletion retention and restore-ledger procedure](account-deletion.md); this development rehearsal does not certify offsite production recovery.
+
 ## Production cutover
 
 Create a separate production database and choose its backup/retention/connection capacity for the workload. Apply the same checked-in migrations and reference seeds through explicit deployment commands; provision the production Architect securely. Configure production connection/TLS, SMTP, CORS and secret-manager values, then verify readiness and the user journey before directing clients to it.

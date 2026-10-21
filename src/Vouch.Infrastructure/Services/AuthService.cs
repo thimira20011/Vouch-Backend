@@ -177,13 +177,8 @@ public class AuthService(ApplicationDbContext context, IPasswordHasher passwordH
         return await photoStorage.StorePhotoAsync(userId, stream, contentType, ct);
     }
 
-    public async Task RequestAccountDeletionAsync(Guid userId, CancellationToken ct = default)
-    {
-        var user = await context.Users.SingleOrDefaultAsync(u => u.Id == userId, ct) ?? throw new KeyNotFoundException("User not found.");
-        user.Status = AccountStatus.DeletionRequested;
-        user.DeletionRequestedAt ??= clock.GetUtcNow();
-        await context.SaveChangesAsync(ct);
-    }
+    public Task<AccountDeletionResponse> RequestAccountDeletionAsync(Guid userId, CancellationToken ct = default)
+        => AccountDeletionRequests.RequestAsync(context, clock, userId, ct);
 
     private Task LockCampusAsync(Guid campusId, CancellationToken ct)
         => context.Database.ExecuteSqlInterpolatedAsync($"SELECT 1 FROM \"Campuses\" WHERE \"Id\" = {campusId} FOR UPDATE", ct);

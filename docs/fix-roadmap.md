@@ -27,7 +27,7 @@ This roadmap covers the defects identified in the review and the remaining SRS w
 | 11 | Correct moderation decisions and report review | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
 | 12 | Durable alerts and email deadlines | Implemented; PostgreSQL/API checks and Supabase development upgrade passed |
 | 13 | Private durable photos and staged reveal | Implemented; real-photo frontend/Alpine acceptance pending |
-| 14 | Complete account deletion within its deadline | Pending |
+| 14 | Complete account deletion within its deadline | Implemented on feature/step-14-account-deletion; shared database deployment pending |
 | 15 | Idempotent, concurrent-safe match acceptance | Pending |
 | 16 | Reliable daily generation and cache invalidation | Pending |
 | 17 | Correct pause/resume and inactivity lifecycle | Pending |
@@ -378,3 +378,18 @@ Verification:
 - The temporary development API returned 200 `Healthy`, onboarding options 200 and anonymous photo/metadata requests 401, then was stopped. No real photo uploads, user accounts or emails were created in development by these checks.
 
 Next implementation step: Step 14, account-deletion deadlines and retry/completion evidence. Real-photo frontend and deployment performance/operational acceptance remain later checks.
+
+## Step 14 change record — 21 October 2026
+
+Implemented on `feature/step-14-account-deletion`. Deletion requests atomically persist their original request time, fixed 30-day deadline and durable queue row with account-state/session revocation and campus metrics. Repeated/concurrent requests do not extend the deadline. A database trigger makes recorded deletion intent terminal, preserves its timestamp and is required by readiness. The worker starts immediately and checks every minute, using bounded batches, fenced PostgreSQL leases, cancellation timeouts and exponential retries rather than waiting until day 30.
+
+Cleanup commits account/content/token/photo/invite erasure, completion evidence and surviving metrics together. The user explicitly selected deletion of shared conversations and both participants' messages. Related reports/audits/notices and scalar actor/approval references are handled deliberately; unrelated users/conversations remain. A minimal encrypted request-bound restore identifier expires by the original deadline; receipts without user identifiers expire 90 days after completion. Deadline health and a campus-scoped Architect status endpoint expose operational risk/history without private payloads. Offline encrypted, expiring restore-ledger export/replay prevents supported backup recovery from silently resurrecting erased accounts. See [account deletion](account-deletion.md) for retention, recovery, API and operator responsibilities.
+
+Verification:
+
+- Full Release suite on disposable PostgreSQL 17.11: **287 passed** (77 unit, 210 integration), zero failed/skipped. The 22 new cases cover original timestamps/deadlines, terminal intent, concurrent requests/workers, immediate startup, graph/partner-message cleanup, surviving metrics, injected message/user/receipt failures and retry, cancellation/lease recovery, exact deadline health/history, receipt/identifier expiry, campus status, restore replay/binding/expiry/failure refusal, CLI overwrite/backup guards, trigger readiness and legacy queue backfill.
+- Final Release build passed with zero warnings/errors; publish excluded local settings and legacy photos. EF confirmed no pending model changes and migration SQL was reviewed. Historical moderation/notification upgrade fixtures now build fresh older-schema databases instead of attempting a downgrade through irreversible erasure; their original assertions remain covered.
+- Took a fresh encrypted Supabase public-schema backup, verified decryption, restored it into a generated loopback database and rehearsed upgrade from nine to ten migrations. Inspection had no issues/collisions/rewrites; reference counts remained four campuses, six reflections and 50 icebreakers, with zero users/invites. The local rehearsal server was stopped and temporary plaintext/password files removed.
+- Shared Supabase development was **not upgraded** and stays at Step 13. Apply `20261021175206_DurableAccountDeletion` when deploying the branch, following the verified backup/upgrade procedure. No production database, real user accounts, live email, application keys or existing external backup/log archives were changed. Production retention enforcement, alerts and offsite restore/outage drills remain Step 21 acceptance.
+
+Next implementation step: Step 15, idempotent concurrent-safe match acceptance. The [task checklist](task-progress.md) marks Step 14 implementation complete and lists shared database deployment separately.

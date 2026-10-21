@@ -16,7 +16,8 @@ public static class ProtectedColumns
         new("Reports", "Details"), new("Reports", "ArchitectNotes"), new("AmbassadorInvites", "IntendedEmail", Limit: 120),
         new("ModerationAudits", "Reason", Limit: 1000), new("Notifications", "Payload", Limit: 4000),
         new("PhotoAssets", "OriginalJpeg", Limit: 2_800_000), new("PhotoAssets", "AbstractJpeg", Limit: 2_800_000),
-        new("PhotoAssets", "QuarterJpeg", Limit: 2_800_000), new("PhotoAssets", "SixtyJpeg", Limit: 2_800_000)
+        new("PhotoAssets", "QuarterJpeg", Limit: 2_800_000), new("PhotoAssets", "SixtyJpeg", Limit: 2_800_000),
+        new("AccountDeletions", "BackupSubjectId", Limit: 65)
     ];
     public static readonly ProtectedColumn[] Json = [new("Users", "DeepValues"), new("Users", "IntellectualInterests")];
 }

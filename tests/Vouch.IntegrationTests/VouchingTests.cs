@@ -1,15 +1,15 @@
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
-using System.Reflection;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.DependencyInjection;
 using Vouch.Application.Common.Interfaces;
+using Vouch.Application.Features.Auth;
 using Vouch.Application.Features.Vouching;
 using Vouch.Domain.Entities;
 using Vouch.Domain.Enums;
-using Vouch.Infrastructure.BackgroundJobs;
 using Vouch.Infrastructure.Persistence;
+using Vouch.Infrastructure.Services;
 using Vouch.IntegrationTests.Infrastructure;
 
 namespace Vouch.IntegrationTests;
@@ -318,9 +318,9 @@ public sealed class VouchingTests(PostgresFixture postgres) : IAsyncLifetime
         await using var db = postgres.CreateContext();
         db.VouchRequests.Add(new PeerVouchRequest { RequesterId = _target.Id, RequestedVoucherId = _peers[0].Id, ExpiresAt = Now.AddDays(7) });
         await db.SaveChangesAsync();
-        var worker = ActivatorUtilities.CreateInstance<AccountDeletionWorker>(_factory.Services);
-        var deletion = typeof(AccountDeletionWorker).GetMethod("DeleteUserDataAsync", BindingFlags.NonPublic | BindingFlags.Instance)!;
-        await (Task)deletion.Invoke(worker, [db, _peers[0].Id, CancellationToken.None])!;
+        using var scope = _factory.Services.CreateScope();
+        await scope.ServiceProvider.GetRequiredService<IAuthService>().RequestAccountDeletionAsync(_peers[0].Id);
+        await scope.ServiceProvider.GetRequiredService<AccountDeletionProcessor>().ProcessDueAsync();
         Assert.False(await db.Users.AnyAsync(u => u.Id == _peers[0].Id)); Assert.Empty(await db.VouchRequests.ToListAsync());
         var target = await StoredAsync(_target); Assert.Equal(2, target.TrustScore); Assert.Equal(2, target.ActiveVouchesReceivedCount);
     }

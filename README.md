@@ -194,7 +194,7 @@ Check `http://localhost:5000/healthz` for database/schema/protected-data readine
 
 ### Configuration and deployment boundaries
 
-See the [task progress checklist](docs/task-progress.md) for completed Steps 1–13, remaining Steps 14–22 and outstanding acceptance checks.
+See the [task progress checklist](docs/task-progress.md) for completed Steps 1–14, remaining Steps 15–22 and outstanding acceptance checks.
 
 For university verification, curated onboarding, manual ambassador approval and launch eligibility, follow [identity and onboarding](docs/identity-and-onboarding.md). Registration creates a restricted incubation session; invited ambassadors activate only after verification/onboarding, and ordinary users also need three qualifying vouches. SMTP is required for verification: missing delivery returns 503. The new migration requires existing students to verify/onboard and legacy ambassadors to receive explicit approval.
 
@@ -207,6 +207,8 @@ For atomic vouch submission, current trust totals, zero-weight incubation activa
 For report evidence, paginated Architect review, atomic decisions and audited suspension/reinstatement, follow [moderation review](docs/moderation-review.md). The third upheld decision within 90 days suspends immediately. Apply the Step 11 migration through the explicit upgrade command before running this version.
 
 For encrypted offline inboxes, Architect subscriptions, retryable report emails and deadline monitoring, follow [durable notifications](docs/durable-notifications.md). Apply the Step 12 migration before running this version. Production requires configured SMTP and enabled background jobs; development without SMTP retains alert emails as pending work.
+
+For prompt erasure, durable retries, completion receipts and safe replay after restoring backups, follow [account deletion](docs/account-deletion.md). Step 14 removes shared conversations and all their messages under the selected policy. Apply its migration before deploying this branch; shared Supabase development remains on Step 13 until deployment.
 
 `.env.example` documents CORS browser origins, SMTP/Anthropic configuration and photo settings. Configure SMTP before testing live verification/alerts. Empty Anthropic key uses curated fallback prompts. Optional photos are stored encrypted in PostgreSQL with abstract, 25%, 60% and original variants. Every `/photos` request checks the current session, campus, blocks and earned conversation stage. See [private photos](docs/private-photos.md) for upload limits, client integration and legacy-file handling.
 

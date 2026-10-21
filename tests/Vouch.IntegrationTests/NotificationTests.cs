@@ -302,15 +302,19 @@ public sealed class NotificationTests(PostgresFixture postgres) : IAsyncLifetime
     [Fact]
     public async Task PreviousSchemaUpgradePreservesReportsWithoutInventingDeliveryHistory()
     {
-        await using (var db = postgres.CreateContext())
+        await using var previous = new IsolatedPostgresDatabase(Environment.GetEnvironmentVariable("VOUCH_TEST_POSTGRES_ADMIN")!);
+        await previous.CreateAsync();
+        var options = new DbContextOptionsBuilder<ApplicationDbContext>().UseNpgsql(previous.ConnectionString).Options;
+        await using (var db = new ApplicationDbContext(options, PostgresFixture.Encryption, PostgresFixture.Lookup))
         {
             await db.GetService<IMigrator>().MigrateAsync("20261011065511_AuditedModerationReview");
+            await PreviousSchemaData.CopyAsync(postgres, db, "Campuses", "Users", "ProtectionStates");
             await db.Database.ExecuteSqlInterpolatedAsync($"""
                 INSERT INTO "Reports" ("Id", "ReporterId", "ReportedUserId", "Category", "Details", "SeverityScore", "Status", "CreatedAt")
                 VALUES ({Guid.NewGuid()}, {_sender.Id}, {_recipient.Id}, 1, {PostgresFixture.Encryption.Encrypt("Legacy report details.", "Reports.Details")}, 5, 1, {Now})
                 """);
         }
-        await using var upgraded = postgres.CreateContext();
+        await using var upgraded = new ApplicationDbContext(options, PostgresFixture.Encryption, PostgresFixture.Lookup);
         Assert.True((await new DatabaseUpgrade(upgraded, PostgresFixture.Encryption, PostgresFixture.Lookup).ApplyAsync(backupConfirmed: true)).CanApply);
         Assert.Single(await upgraded.Reports.ToListAsync()); Assert.Empty(await upgraded.Notifications.ToListAsync()); Assert.Empty(await upgraded.NotificationReceipts.ToListAsync());
         Assert.Empty(await upgraded.Database.GetPendingMigrationsAsync());
