@@ -49,5 +49,15 @@ public sealed class DatabaseReadinessCheck(IServiceScopeFactory scopes) : IHealt
             """, (Npgsql.NpgsqlConnection)db.Database.GetDbConnection());
         if (!(bool)(await revocation.ExecuteScalarAsync(ct))!)
             throw new InvalidOperationException("The account session revocation trigger is missing or disabled.");
+        await using var deletion = new Npgsql.NpgsqlCommand("""
+            SELECT EXISTS (
+                SELECT 1 FROM pg_trigger t JOIN pg_proc p ON p.oid=t.tgfoid
+                JOIN pg_namespace n ON n.oid=p.pronamespace
+                WHERE t.tgrelid='public."Users"'::regclass AND t.tgname='vouch_preserve_deletion_request'
+                AND NOT t.tgisinternal AND t.tgenabled IN ('O', 'A')
+                AND n.nspname='public' AND p.proname='vouch_preserve_deletion_request')
+            """, (Npgsql.NpgsqlConnection)db.Database.GetDbConnection());
+        if (!(bool)(await deletion.ExecuteScalarAsync(ct))!)
+            throw new InvalidOperationException("The account deletion request preservation trigger is missing or disabled.");
     }
 }

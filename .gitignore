@@ -25,6 +25,7 @@ bld/
 ## User secrets & environment
 appsettings.Production.json
 appsettings.Local.json
+*.ledger
 **/wwwroot/photos/
 .env
 .env.*

@@ -1,5 +1,7 @@
 # Database installation, upgrades and protected data
 
+Step 14 adds `20261021175206_DurableAccountDeletion`, a durable erasure queue, request-preservation trigger and protected restore identifiers. Preserve a fresh authoritative deletion ledger before rollback/restore and replay it on the restored current schema with writers stopped. See [account deletion](account-deletion.md) for `export-deletions`/`replay-deletions`, the supported backup window and retention policy. Deployment of this branch's migration to shared Supabase is a separate step.
+
 Step 13 adds `20261016152507_PrivateDatabasePhotos`. Encrypted originals and all three reveal variants are part of the PostgreSQL backup and protected-data inspection/key-rotation inventory. Preserve database backups and retain their key rings under separate access controls. The migration creates `PhotoAssets` without importing legacy filesystem files; see [private photos](private-photos.md) before upgrading a deployment with old uploads. Existing photo volumes must never be served publicly and are not deleted automatically.
 
 Steps 6–7 add an irreversible invite-digest/identity migration. See [identity and onboarding](identity-and-onboarding.md#upgrade-and-rollback) before upgrading: existing non-Architect accounts return to incubation and need new eligibility evidence; legacy ambassadors require explicit manual approval.

@@ -120,6 +120,7 @@ public sealed class LegacySchemaBaseline(ApplicationDbContext db)
                 if (filter == "\"Status\" = 1") filter = "(\"Status\" = 1)";
                 if (filter == "\"CompletedAt\" IS NULL AND \"CancelledAt\" IS NULL")
                     filter = "((\"CompletedAt\" IS NULL) AND (\"CancelledAt\" IS NULL))";
+                if (filter == "\"CompletedAt\" IS NULL") filter = "(\"CompletedAt\" IS NULL)";
                 if (!indexes.TryGetValue(index.Name, out var actual) || actual !=
                     (index.IsUnique, string.Join(',', index.Columns.Select(c => c.Name)), filter)) return false;
             }

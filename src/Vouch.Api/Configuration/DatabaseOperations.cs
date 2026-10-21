@@ -2,6 +2,8 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Vouch.Infrastructure.Persistence;
 using Vouch.Infrastructure.Security;
+using Vouch.Infrastructure.Services;
+using Microsoft.Extensions.Logging.Abstractions;
 
 namespace Vouch.Api.Configuration;
 
@@ -50,7 +52,10 @@ public static class DatabaseOperations
                         RequiredConfiguration.Read(config, "Bootstrap:FullName"), RequiredConfiguration.Read(config, "Bootstrap:CampusCode"), resetPassword);
                     Console.WriteLine($"Architect provisioned/verified. UserId={id}");
                     return 0;
-                default: throw new ArgumentException("database-task must be inspect, upgrade, seed or provision-admin.");
+                case "export-deletions":
+                case "replay-deletions":
+                    return await RunDeletionLedgerAsync(config, db, lookup, encryption);
+                default: throw new ArgumentException("database-task must be inspect, upgrade, seed, provision-admin, export-deletions or replay-deletions.");
             }
         }
         catch (Exception ex)
@@ -59,6 +64,37 @@ public static class DatabaseOperations
             Console.Error.WriteLine(SafeFailureMessage(ex));
             return 1;
         }
+    }
+
+    private static async Task<int> RunDeletionLedgerAsync(IConfiguration config, ApplicationDbContext db, EmailLookup lookup, AesEncryptionService encryption)
+    {
+        await DatabaseReadinessCheck.VerifyAsync(db, lookup, encryption);
+        var path = Path.GetFullPath(RequiredConfiguration.Read(config, "deletion-ledger-path"));
+        await db.Database.OpenConnectionAsync();
+        await using var gate = new Npgsql.NpgsqlCommand("SELECT pg_try_advisory_lock(72672604)", (Npgsql.NpgsqlConnection)db.Database.GetDbConnection());
+        if (!(bool)(await gate.ExecuteScalarAsync())!) throw new InvalidOperationException("Another database operation is running.");
+        try
+        {
+            var processor = new AccountDeletionProcessor(db, TimeProvider.System, NullLogger<AccountDeletionProcessor>.Instance);
+            if (config["database-task"] == "export-deletions")
+            {
+                var value = await processor.ExportRestoreLedgerAsync();
+                await using var file = new FileStream(path, FileMode.CreateNew, FileAccess.Write, FileShare.None);
+                await using var writer = new StreamWriter(file);
+                await writer.WriteAsync(value);
+                Console.WriteLine("Encrypted deletion ledger exported. Keep it private with the matching retained key ring.");
+            }
+            else
+            {
+                if (!config.GetValue("backup-confirmed", false)) throw new InvalidOperationException("Restore replay requires --backup-confirmed true and stopped application writers.");
+                var info = new FileInfo(path);
+                if (!info.Exists || info.Length > 8 * 1024 * 1024) throw new ArgumentException("A valid encrypted deletion ledger file is required.");
+                var count = await processor.ReplayRestoreLedgerAsync(await File.ReadAllTextAsync(path));
+                Console.WriteLine($"Restore deletion replay completed. Accounts erased={count}. Verify readiness before enabling traffic.");
+            }
+            return 0;
+        }
+        finally { await db.Database.ExecuteSqlRawAsync("SELECT pg_advisory_unlock(72672604)"); }
     }
 
     public static string SafeFailureMessage(Exception exception)

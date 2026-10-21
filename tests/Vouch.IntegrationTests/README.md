@@ -55,6 +55,8 @@ Use `-Filter 'FullyQualifiedName~VouchingTests'` for a focused regression run; o
 
 - Photo cases use real synthetic-image processing and encrypted PostgreSQL storage. They cover all reveal stages, direct URL attempts, current daily preview expiry, stranger/Architect/campus/block restrictions, account-state changes, cached pointers, concurrent replacement and injected-write rollback, invalid/oversized multipart uploads, ciphertext binding, selective decryption, key rotation, restart, optional photos and account cascade cleanup. Native processing tests also cover format signatures, nonseekable input, dimensions, cancellation, orientation and metadata removal.
 
+Step 14 deletion cases cover first-request/deadline preservation, concurrent requests/workers, immediate worker startup, complete shared-conversation erasure, surviving metrics, injected rollback/retry at message/user/receipt writes, cancellation and expired-lease recovery, exact deadline health/history, identity/receipt retention, campus-scoped status, authenticated expiring restore ledgers, CLI overwrite/backup guards, trigger readiness and legacy migration. Historical moderation/notification upgrade fixtures create separate older-schema databases instead of downgrading through irreversible erasure.
+
 To run just the unit suite without PostgreSQL:
 
 ```powershell

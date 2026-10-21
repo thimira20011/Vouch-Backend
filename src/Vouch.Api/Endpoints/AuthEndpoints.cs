@@ -104,14 +104,24 @@ public static class AuthEndpoints
             var userIdStr = principal.FindFirstValue(ClaimTypes.NameIdentifier);
             if (!Guid.TryParse(userIdStr, out var userId)) return Results.Unauthorized();
 
-            await authService.RequestAccountDeletionAsync(userId, ct);
-            return Results.Ok(new { message = "Account scheduled for permanent deletion within 30 days." });
+            var deletion = await authService.RequestAccountDeletionAsync(userId, ct);
+            return Results.Ok(new { message = "Account scheduled for permanent deletion within 30 days. Shared conversations and all their messages will also be deleted.",
+                deletion.RequestId, deletion.RequestedAt, deletion.DeadlineAt });
         })
         .RequireAuthorization()
         .WithName("RequestAccountDeletion")
         .WithSummary("Request permanent account deletion (NFR-6)")
         .RequireRateLimiting("auth_standard");
 
+        app.MapGet("/api/architect/deletions/status", async (ClaimsPrincipal principal,
+            Vouch.Infrastructure.Persistence.ApplicationDbContext db, Vouch.Infrastructure.Services.AccountDeletionProcessor deletion, HttpContext http, CancellationToken ct) =>
+        {
+            http.Response.Headers.CacheControl = "no-store";
+            var id = Guid.Parse(principal.FindFirstValue(ClaimTypes.NameIdentifier)!);
+            var caller = await db.Users.AsNoTracking().SingleAsync(u => u.Id == id, ct);
+            await Vouch.Infrastructure.Security.ResourceAccess.RequireArchitectAsync(db, id, caller.CampusId, ct);
+            return Results.Ok(await deletion.GetStatusAsync(caller.CampusId, ct));
+        }).RequireAuthorization("ArchitectOnly").WithName("GetAccountDeletionStatus");
         return app;
     }
 }

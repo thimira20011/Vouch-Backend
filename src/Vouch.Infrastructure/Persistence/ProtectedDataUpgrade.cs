@@ -112,7 +112,14 @@ public sealed class ProtectedDataUpgrade(ApplicationDbContext db, AesEncryptionS
                     try
                     {
                         var ordinal = reader.GetOrdinal(column.Column);
-                        if (reader.IsDBNull(ordinal)) continue;
+                        if (reader.IsDBNull(ordinal))
+                        {
+                            // The deletion migration intentionally backfills no plaintext identifier
+                            // into a protected column. Build its authenticated tombstone offline here.
+                            if (group.Key == "AccountDeletions" && column.Column == "BackupSubjectId" && !reader.IsDBNull(reader.GetOrdinal("UserId")))
+                                values[column.Column] = encryption.Encrypt(DeletionTombstone.Encode(id, reader.GetGuid(reader.GetOrdinal("UserId"))), column.Purpose);
+                            continue;
+                        }
                         var raw = reader.GetString(ordinal);
                         if (alreadyProtected && raw.Length > 0 && !raw.StartsWith("vouch:", StringComparison.Ordinal))
                             throw new ProtectedDataException(); // A completed conversion must never silently adopt tampered plaintext.
@@ -121,6 +128,7 @@ public sealed class ProtectedDataUpgrade(ApplicationDbContext db, AesEncryptionS
                         if (column.Limit > 0 && plain.Length > column.Limit) throw new ArgumentException();
                         if (group.Key == "PhotoAssets")
                             _ = PhotoPayload.Decode(plain, reader.GetGuid(reader.GetOrdinal("OwnerId")), id, PhotoPayload.ColumnStage(column.Column));
+                        if (group.Key == "AccountDeletions") _ = DeletionTombstone.Decode(plain, id);
                         if (ProtectedColumns.Json.Contains(column))
                         {
                             if (column.Column == "DeepValues")
