@@ -2,6 +2,8 @@
 
 Created: 1 October 2026. Detailed evidence: [project review](project-review-and-completion-plan.md).
 
+For a consolidated checklist of completed work and remaining tasks, see [task progress](task-progress.md).
+
 ## How we will work
 
 Work through numbered steps in order. Each step is a reviewable change with a focused regression check and a recorded result. Add tests with the fix; do not wait until the end for testing. Never apply a migration or backfill to a real database without a dry run, backup and verified upgrade path. Infrastructure tests must use an isolated PostgreSQL database.

@@ -194,6 +194,8 @@ Check `http://localhost:5000/healthz` for database/schema/protected-data readine
 
 ### Configuration and deployment boundaries
 
+See the [task progress checklist](docs/task-progress.md) for completed Steps 1–13, remaining Steps 14–22 and outstanding acceptance checks.
+
 For university verification, curated onboarding, manual ambassador approval and launch eligibility, follow [identity and onboarding](docs/identity-and-onboarding.md). Registration creates a restricted incubation session; invited ambassadors activate only after verification/onboarding, and ordinary users also need three qualifying vouches. SMTP is required for verification: missing delivery returns 503. The new migration requires existing students to verify/onboard and legacy ambassadors to receive explicit approval.
 
 For a hosted development PostgreSQL database and later production cutover, follow [Supabase development setup](docs/supabase-development.md).
